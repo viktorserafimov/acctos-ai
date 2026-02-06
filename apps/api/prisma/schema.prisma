@@ -1,0 +1,217 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// =====================
+// Multi-Tenancy Models
+// =====================
+
+model Tenant {
+  id        String   @id @default(cuid())
+  name      String
+  slug      String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  memberships  Membership[]
+  usageEvents  UsageEvent[]
+  tickets      Ticket[]
+  subscription Subscription?
+  auditLogs    AuditLog[]
+
+  // Integrations
+  makeApiKey    String?
+  azureApiKey   String?
+  azureEndpoint String?
+}
+
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  name      String?
+  password  String // bcrypt hash
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  memberships    Membership[]
+  auditLogs      AuditLog[]
+  ticketMessages TicketMessage[]
+}
+
+model Membership {
+  id       String @id @default(cuid())
+  userId   String
+  tenantId String
+  role     Role   @default(MEMBER)
+
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, tenantId])
+  @@index([tenantId])
+}
+
+enum Role {
+  ORG_OWNER
+  ADMIN
+  BILLING_ADMIN
+  MEMBER
+  READONLY
+  SUPPORT_AGENT
+}
+
+// =====================
+// Usage Tracking Models
+// =====================
+
+model UsageEvent {
+  id             String   @id @default(cuid())
+  tenantId       String
+  source         String // "make" | "azure" | "openai"
+  idempotencyKey String
+  documentType   String? // "bank" | "vat"
+  fileType       String? // "pdf" | "excel"
+  step           String? // "split" | "ocr" | "classify" | "route" | "finalize"
+  chunkStart     Int?
+  chunkEnd       Int?
+  bankCode       String?
+  cost           Decimal? @db.Decimal(10, 4)
+  tokens         Int?
+  metadata       Json?
+  timestamp      DateTime @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, source, idempotencyKey])
+  @@index([tenantId, timestamp])
+  @@index([tenantId, source])
+}
+
+// Daily aggregates for fast dashboard queries
+model UsageAggregate {
+  id           String   @id @default(cuid())
+  tenantId     String
+  date         DateTime @db.Date
+  source       String
+  documentType String?
+  fileType     String?
+  step         String?
+  bankCode     String?
+  eventCount   Int      @default(0)
+  totalCost    Decimal  @default(0) @db.Decimal(10, 4)
+  totalTokens  Int      @default(0)
+
+  @@unique([tenantId, date, source, documentType, fileType, step, bankCode])
+  @@index([tenantId, date])
+}
+
+// =====================
+// Billing Models
+// =====================
+
+model Subscription {
+  id               String    @id @default(cuid())
+  tenantId         String    @unique
+  stripeCustomerId String?
+  stripePriceId    String?
+  status           String    @default("trialing") // trialing, active, past_due, canceled
+  currentPeriodEnd DateTime?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+}
+
+model Plan {
+  id                 String @id @default(cuid())
+  name               String
+  stripePriceId      String @unique
+  documentsPerMonth  Int
+  pagesPerMonth      Int
+  storageGb          Int
+  supportSla         String // "standard" | "priority" | "enterprise"
+  priceMonthly       Int // in cents
+  isActive           Boolean @default(true)
+}
+
+// =====================
+// Support Ticket Models
+// =====================
+
+model Ticket {
+  id        String   @id @default(cuid())
+  tenantId  String
+  subject   String
+  status    String   @default("open") // open, in_progress, waiting, resolved, closed
+  priority  String   @default("normal") // low, normal, high, urgent
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant   Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  messages TicketMessage[]
+
+  @@index([tenantId, status])
+  @@index([tenantId, createdAt])
+}
+
+model TicketMessage {
+  id         String   @id @default(cuid())
+  ticketId   String
+  authorId   String
+  content    String   @db.Text
+  isInternal Boolean  @default(false) // Hidden from customers
+  createdAt  DateTime @default(now())
+
+  ticket      Ticket       @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  author      User         @relation(fields: [authorId], references: [id])
+  attachments Attachment[]
+
+  @@index([ticketId, createdAt])
+}
+
+model Attachment {
+  id         String   @id @default(cuid())
+  messageId  String
+  filename   String
+  blobUrl    String
+  mimeType   String?
+  sizeBytes  Int?
+  scanStatus String   @default("pending") // pending, clean, infected
+  createdAt  DateTime @default(now())
+
+  message TicketMessage @relation(fields: [messageId], references: [id], onDelete: Cascade)
+}
+
+// =====================
+// Audit Log Model
+// =====================
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  userId     String
+  tenantId   String?
+  action     String // e.g., "user.login", "subscription.update", "ticket.create"
+  resource   String // e.g., "user", "subscription", "ticket"
+  resourceId String?
+  metadata   Json?
+  ipAddress  String?
+  userAgent  String?
+  timestamp  DateTime @default(now())
+
+  user   User    @relation(fields: [userId], references: [id])
+  tenant Tenant? @relation(fields: [tenantId], references: [id])
+
+  @@index([tenantId, timestamp])
+  @@index([userId, timestamp])
+  @@index([action])
+}

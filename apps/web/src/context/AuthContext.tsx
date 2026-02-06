@@ -1,0 +1,138 @@
+import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import axios from 'axios';
+
+// Types
+interface User {
+    id: string;
+    email: string;
+    name?: string;
+}
+
+interface Tenant {
+    id: string;
+    name: string;
+    slug: string;
+    role: string;
+}
+
+interface AuthContextType {
+    user: User | null;
+    tenants: Tenant[];
+    activeTenant: Tenant | null;
+    token: string | null;
+    isLoading: boolean;
+    login: (email: string, password: string) => Promise<void>;
+    register: (email: string, password: string, name: string, tenantName: string) => Promise<void>;
+    logout: () => void;
+    switchTenant: (tenantId: string) => Promise<void>;
+}
+
+const AuthContext = createContext<AuthContextType | null>(null);
+
+export function useAuth() {
+    const context = useContext(AuthContext);
+    if (!context) {
+        throw new Error('useAuth must be used within AuthProvider');
+    }
+    return context;
+}
+
+export function AuthProvider({ children }: { children: React.ReactNode }) {
+    const [user, setUser] = useState<User | null>(null);
+    const [tenants, setTenants] = useState<Tenant[]>([]);
+    const [activeTenant, setActiveTenant] = useState<Tenant | null>(null);
+    const [token, setToken] = useState<string | null>(() => localStorage.getItem('token'));
+    const [isLoading, setIsLoading] = useState(true);
+
+    // Configure axios defaults
+    useEffect(() => {
+        if (token) {
+            axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+            localStorage.setItem('token', token);
+        } else {
+            delete axios.defaults.headers.common['Authorization'];
+            localStorage.removeItem('token');
+        }
+    }, [token]);
+
+    // Load user on mount
+    const loadUser = useCallback(async () => {
+        if (!token) {
+            setIsLoading(false);
+            return;
+        }
+
+        try {
+            const response = await axios.get('/api/auth/me');
+            setUser({
+                id: response.data.id,
+                email: response.data.email,
+                name: response.data.name,
+            });
+            setTenants(response.data.tenants);
+
+            // Set active tenant
+            const activeTenantId = response.data.activeTenant;
+            const active = response.data.tenants.find((t: Tenant) => t.id === activeTenantId);
+            setActiveTenant(active || response.data.tenants[0] || null);
+        } catch (error) {
+            console.error('Failed to load user:', error);
+            setToken(null);
+        } finally {
+            setIsLoading(false);
+        }
+    }, [token]);
+
+    useEffect(() => {
+        loadUser();
+    }, [loadUser]);
+
+    const login = async (email: string, password: string) => {
+        const response = await axios.post('/api/auth/login', { email, password });
+        setToken(response.data.token);
+        setUser({
+            id: response.data.user.id,
+            email: response.data.user.email,
+            name: response.data.user.name,
+        });
+        setTenants(response.data.tenants);
+        const active = response.data.tenants.find((t: Tenant) => t.id === response.data.activeTenant);
+        setActiveTenant(active || response.data.tenants[0] || null);
+    };
+
+    const register = async (email: string, password: string, name: string, tenantName: string) => {
+        await axios.post('/api/auth/register', { email, password, name, tenantName });
+        // After registration, user needs to login
+    };
+
+    const logout = () => {
+        setToken(null);
+        setUser(null);
+        setTenants([]);
+        setActiveTenant(null);
+    };
+
+    const switchTenant = async (tenantId: string) => {
+        const response = await axios.post('/api/auth/switch-tenant', { tenantId });
+        setToken(response.data.token);
+        setActiveTenant(response.data.tenant);
+    };
+
+    return (
+        <AuthContext.Provider
+            value={{
+                user,
+                tenants,
+                activeTenant,
+                token,
+                isLoading,
+                login,
+                register,
+                logout,
+                switchTenant,
+            }}
+        >
+            {children}
+        </AuthContext.Provider>
+    );
+}
