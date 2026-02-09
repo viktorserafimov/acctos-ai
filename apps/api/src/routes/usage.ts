@@ -26,6 +26,7 @@ router.get('/summary', async (req: AuthenticatedRequest, res: Response, next: Ne
         const days = parseInt(period.replace('d', '')) || 30;
         const fromDate = new Date();
         fromDate.setDate(fromDate.getDate() - days);
+        fromDate.setHours(0, 0, 0, 0); // Normalize to start of day
 
         // Get aggregated data
         const aggregates = await prisma.usageAggregate.groupBy({
@@ -99,6 +100,7 @@ router.get('/timeseries', async (req: AuthenticatedRequest, res: Response, next:
         const days = parseInt(req.query.days as string) || 30;
         const fromDate = new Date();
         fromDate.setDate(fromDate.getDate() - days);
+        fromDate.setHours(0, 0, 0, 0); // Normalize to start of day
 
         const aggregates = await prisma.usageAggregate.findMany({
             where: {

@@ -1,6 +1,7 @@
 import crypto from 'crypto';
 import { Request, Response, NextFunction } from 'express';
 import { createError } from './errorHandler.js';
+import '../types/express.d.ts'; // Ensure type extension is loaded
 
 /**
  * Verify HMAC signature for event ingestion from Make.com
@@ -23,10 +24,10 @@ export function verifyHmacSignature(
         return next(createError('Server configuration error', 500, 'CONFIG_ERROR'));
     }
 
-    const body = JSON.stringify(req.body);
+    const content = req.rawBody ? req.rawBody : JSON.stringify(req.body);
     const expectedSignature = 'sha256=' + crypto
         .createHmac('sha256', hmacSecret)
-        .update(body)
+        .update(content)
         .digest('hex');
 
     const isValid = crypto.timingSafeEqual(
