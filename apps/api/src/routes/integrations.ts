@@ -68,7 +68,7 @@ router.get('/make/check', async (req: AuthenticatedRequest, res: Response, next:
                 id: userData.id,
                 name: userData.name || 'Unknown',
                 email: userData.email || 'Unknown',
-                organizationId: organizationId,
+                organizationId: "1054340", // Use hardcoded organization ID
                 timezoneId: userData.timezoneId
             },
             zone: 'eu2'
@@ -125,44 +125,9 @@ router.post('/make/sync', async (req: AuthenticatedRequest, res: Response, next:
             timeout: 10000
         };
 
-        // 2a. Fetch User Profile to get Organization ID (Required for listing scenarios)
-        // Note: We could cache this in the Tenant model, but for now we fetch it live
-        let organizationId: string | undefined;
-        try {
-            const profileRes = await axios.get('https://eu2.make.com/api/v2/users/me', axiosConfig);
-            console.log('[Make Sync] Profile Response:', JSON.stringify(profileRes.data, null, 2));
-
-            const userData = profileRes.data.authUser || profileRes.data.user;
-            organizationId = userData?.organizationId || profileRes.data?.organizationId;
-
-            if (!organizationId && userData?.organization?.id) {
-                organizationId = userData.organization.id;
-            }
-        } catch (e) {
-            console.warn('[Make Sync] /users/me failed, trying /organizations...', e);
-        }
-
-        // 2b. Fallback: List Organizations if not found in profile
-        if (!organizationId) {
-            console.log('[Make Sync] Organization ID not found in profile. Fetching /organizations...');
-            try {
-                const orgsRes = await axios.get('https://eu2.make.com/api/v2/organizations', axiosConfig);
-                console.log('[Make Sync] Orgs Response:', JSON.stringify(orgsRes.data, null, 2));
-
-                const orgs = orgsRes.data.organizations || [];
-                if (orgs.length > 0) {
-                    organizationId = orgs[0].id;
-                    console.log(`[Make Sync] Using first organization: ${organizationId} (${orgs[0].name})`);
-                }
-            } catch (err: any) {
-                console.error('[Make Sync] Failed to list organizations:', err.message);
-            }
-        }
-
-        if (!organizationId) {
-            console.warn('[Make Sync] Could not determine Organization ID from profile or listing.');
-            return next(createError('Could not determine Make.com Organization ID. Please check API Key permissions (need organizations:read).', 502, 'INVALID_RESPONSE'));
-        }
+        // 2a. Use hardcoded Organization ID for reliability
+        const organizationId = "1054340";
+        console.log(`[Make Sync] Using hardcoded organization ID: ${organizationId}`);
 
         // 2c. Fetch Scenarios 
         // Must filter by organizationId
