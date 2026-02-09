@@ -110,10 +110,10 @@ router.post('/make/sync', async (req: AuthenticatedRequest, res: Response, next:
             return next(createError('No tenant selected', 400, 'NO_TENANT'));
         }
 
-        // 1. Get API Key
+        // 1. Get API Key and folder/org configuration
         const tenant = await prisma.tenant.findUnique({
             where: { id: tenantId },
-            select: { makeApiKey: true }
+            select: { makeApiKey: true, makeFolderId: true, makeOrgId: true }
         });
 
         if (!tenant?.makeApiKey) {
@@ -125,78 +125,83 @@ router.post('/make/sync', async (req: AuthenticatedRequest, res: Response, next:
             timeout: 10000
         };
 
-        // 2a. Fetch User Profile to get Organization ID (Required for listing scenarios)
-        // Note: We could cache this in the Tenant model, but for now we fetch it live
-        let organizationId: string | undefined;
-        try {
-            const profileRes = await axios.get('https://eu2.make.com/api/v2/users/me', axiosConfig);
-            console.log('[Make Sync] Profile Response:', JSON.stringify(profileRes.data, null, 2));
+        // 2a. Use stored Organization ID if available, otherwise discover it
+        let organizationId: string | undefined = tenant.makeOrgId || undefined;
 
-            const userData = profileRes.data.authUser || profileRes.data.user;
-            organizationId = userData?.organizationId || profileRes.data?.organizationId;
-
-            if (!organizationId && userData?.organization?.id) {
-                organizationId = userData.organization.id;
-            }
-        } catch (e) {
-            console.warn('[Make Sync] /users/me failed, trying /organizations...', e);
-        }
-
-        // 2b. Fallback: List Organizations if not found in profile
         if (!organizationId) {
-            console.log('[Make Sync] Organization ID not found in profile. Fetching /organizations...');
+            // Fallback: Fetch User Profile to get Organization ID
             try {
-                const orgsRes = await axios.get('https://eu2.make.com/api/v2/organizations', axiosConfig);
-                console.log('[Make Sync] Orgs Response:', JSON.stringify(orgsRes.data, null, 2));
+                const profileRes = await axios.get('https://eu2.make.com/api/v2/users/me', axiosConfig);
+                console.log('[Make Sync] Profile Response:', JSON.stringify(profileRes.data, null, 2));
 
-                const orgs = orgsRes.data.organizations || [];
-                if (orgs.length > 0) {
-                    organizationId = orgs[0].id;
-                    console.log(`[Make Sync] Using first organization: ${organizationId} (${orgs[0].name})`);
+                const userData = profileRes.data.authUser || profileRes.data.user;
+                organizationId = userData?.organizationId || profileRes.data?.organizationId;
+
+                if (!organizationId && userData?.organization?.id) {
+                    organizationId = userData.organization.id;
                 }
-            } catch (err: any) {
-                console.error('[Make Sync] Failed to list organizations:', err.message);
+            } catch (e) {
+                console.warn('[Make Sync] /users/me failed, trying /organizations...', e);
             }
+
+            // 2b. Fallback: List Organizations if not found in profile
+            if (!organizationId) {
+                console.log('[Make Sync] Organization ID not found in profile. Fetching /organizations...');
+                try {
+                    const orgsRes = await axios.get('https://eu2.make.com/api/v2/organizations', axiosConfig);
+                    console.log('[Make Sync] Orgs Response:', JSON.stringify(orgsRes.data, null, 2));
+
+                    const orgs = orgsRes.data.organizations || [];
+                    if (orgs.length > 0) {
+                        organizationId = orgs[0].id;
+                        console.log(`[Make Sync] Using first organization: ${organizationId} (${orgs[0].name})`);
+                    }
+                } catch (err: any) {
+                    console.error('[Make Sync] Failed to list organizations:', err.message);
+                }
+            }
+        } else {
+            console.log(`[Make Sync] Using stored Organization ID: ${organizationId}`);
         }
 
         if (!organizationId) {
             console.warn('[Make Sync] Could not determine Organization ID from profile or listing.');
-            return next(createError('Could not determine Make.com Organization ID. Please check API Key permissions (need organizations:read).', 502, 'INVALID_RESPONSE'));
+            return next(createError('Could not determine Make.com Organization ID. Please check API Key permissions (need organizations:read) or set your Organization ID in Settings.', 502, 'INVALID_RESPONSE'));
         }
 
-        // 2c. Fetch Scenarios 
-        // Must filter by organizationId
-        const scenariosRes = await axios.get(`https://eu2.make.com/api/v2/scenarios?organizationId=${organizationId}&limit=200`, axiosConfig);
+        // 2c. Fetch Scenarios (optionally filtered by folder)
+        let scenariosUrl = `https://eu2.make.com/api/v2/scenarios?organizationId=${organizationId}&limit=200`;
+        if (tenant.makeFolderId) {
+            scenariosUrl += `&folderId=${tenant.makeFolderId}`;
+            console.log(`[Make Sync] Filtering scenarios by folder ID: ${tenant.makeFolderId}`);
+        }
+        const scenariosRes = await axios.get(scenariosUrl, axiosConfig);
         const scenarios = scenariosRes.data.scenarios;
 
-        console.log(`[Make Sync] Found ${scenarios.length} scenarios. Fetching usage...`);
+        console.log(`[Make Sync] Found ${scenarios.length} scenarios${tenant.makeFolderId ? ` in folder ${tenant.makeFolderId}` : ''}. Fetching usage...`);
 
         // 3. Fetch Usage for each scenario (Last 30 days)
-        // We'll aggregate this by date in memory first
-        const usageByDate: Record<string, { ops: number, data: number }> = {};
+        // Track operations, data transfer, and centicredits
+        const usageByDate: Record<string, { ops: number; data: number; centicredits: number }> = {};
 
         // Run in parallel chunks to avoid rate limits if many scenarios
-        // For now, simple Promise.all (be careful with rate limits)
         const usagePromises = scenarios.map(async (scenario: any) => {
             try {
-                // Determine date range: last 30 days
-                // Make.com might just give us the last 30 days by default on this endpoint
                 const usageRes = await axios.get(`https://eu2.make.com/api/v2/scenarios/${scenario.id}/usage`, axiosConfig);
-                const history = usageRes.data.usage || []; // Array of { date, operations, dataTransfer }
+                const history = usageRes.data.usage || [];
 
                 for (const point of history) {
-                    // Normalize date string (API might return timestamp or ISO)
-                    // Assuming point.date is something like "2023-10-27" or ISO
                     const dateStr = new Date(point.date).toISOString().split('T')[0];
 
                     if (!usageByDate[dateStr]) {
-                        usageByDate[dateStr] = { ops: 0, data: 0 };
+                        usageByDate[dateStr] = { ops: 0, data: 0, centicredits: 0 };
                     }
                     usageByDate[dateStr].ops += (point.operations || 0);
                     usageByDate[dateStr].data += (point.dataTransfer || 0);
+                    usageByDate[dateStr].centicredits += (point.centicredits || 0);
                 }
             } catch (err: any) {
-                console.warn(`[Make Sync] Failed to fetch usage for scenario ${scenario.id}: ${err.message}`);
+                console.warn(`[Make Sync] Failed to fetch usage for scenario ${scenario.id} (${scenario.name}): ${err.message}`);
                 // Continue despite individual failure
             }
         });
@@ -204,15 +209,12 @@ router.post('/make/sync', async (req: AuthenticatedRequest, res: Response, next:
         await Promise.all(usagePromises);
 
         // 4. Update Database
-        // We will overwrite the 'make' aggregates for the dates we collected
-        // To be safe, let's delete 'make' aggregates for the encountered dates and re-insert
-
         const datesToUpdate = Object.keys(usageByDate);
         if (datesToUpdate.length > 0) {
             const minDate = new Date(datesToUpdate.sort()[0]);
 
             await prisma.$transaction(async (tx) => {
-                // Clear existing aggregates for this range
+                // Clear existing 'make' aggregates for this range
                 await tx.usageAggregate.deleteMany({
                     where: {
                         tenantId,
@@ -221,14 +223,13 @@ router.post('/make/sync', async (req: AuthenticatedRequest, res: Response, next:
                     }
                 });
 
-                // Insert new aggregates
+                // Insert new aggregates with actual credit values
                 for (const dateStr of datesToUpdate) {
                     const stats = usageByDate[dateStr];
-                    if (stats.ops === 0 && stats.data === 0) continue;
+                    if (stats.ops === 0 && stats.data === 0 && stats.centicredits === 0) continue;
 
-                    // Estimated cost: 0.0001 EUR per operation (Placeholder)
-                    // You might want to make this configurable in Tenant model
-                    const estimatedCost = stats.ops * 0.0001;
+                    // Convert centicredits to credits (1 credit = 100 centicredits)
+                    const credits = stats.centicredits / 100;
 
                     await tx.usageAggregate.create({
                         data: {
@@ -236,18 +237,31 @@ router.post('/make/sync', async (req: AuthenticatedRequest, res: Response, next:
                             source: 'make',
                             date: new Date(dateStr),
                             eventCount: stats.ops,
-                            totalCost: estimatedCost,
-                            totalTokens: 0 // Not applicable for Make
+                            totalCost: credits, // Actual Make.com credits (not EUR estimate)
+                            totalTokens: 0
                         }
                     });
                 }
             });
         }
 
+        // Calculate totals for response
+        const totalCredits = Object.values(usageByDate).reduce(
+            (sum, day) => sum + day.centicredits, 0
+        ) / 100;
+        const totalOps = Object.values(usageByDate).reduce(
+            (sum, day) => sum + day.ops, 0
+        );
+
+        console.log(`[Make Sync] Complete. ${scenarios.length} scenarios, ${datesToUpdate.length} days, ${totalCredits} credits, ${totalOps} operations`);
+
         res.json({
             status: 'success',
             scenariosProcessed: scenarios.length,
-            recordsUpdated: datesToUpdate.length
+            recordsUpdated: datesToUpdate.length,
+            totalCredits,
+            totalOperations: totalOps,
+            folderFiltered: !!tenant.makeFolderId,
         });
 
     } catch (error: any) {

@@ -30,6 +30,8 @@ model Tenant {
 
   // Integrations
   makeApiKey    String?
+  makeFolderId  String?
+  makeOrgId     String?
   azureApiKey   String?
   azureEndpoint String?
 }
