@@ -174,6 +174,20 @@ router.get('/me', authenticateToken, async (req: AuthenticatedRequest, res: Resp
             return next(createError('User not found', 404, 'NOT_FOUND'));
         }
 
+        // Fetch integration config status for the active tenant
+        const tenantConfig = req.user!.tenantId
+            ? await prisma.tenant.findUnique({
+                  where: { id: req.user!.tenantId },
+                  select: {
+                      makeApiKey: true,
+                      makeFolderId: true,
+                      makeOrgId: true,
+                      azureApiKey: true,
+                      azureEndpoint: true,
+                  },
+              })
+            : null;
+
         res.json({
             id: user.id,
             email: user.email,
@@ -185,6 +199,13 @@ router.get('/me', authenticateToken, async (req: AuthenticatedRequest, res: Resp
                 role: m.role,
             })),
             activeTenant: req.user!.tenantId,
+            integrations: {
+                makeApiKeyConfigured: !!tenantConfig?.makeApiKey,
+                makeFolderId: tenantConfig?.makeFolderId || '',
+                makeOrgId: tenantConfig?.makeOrgId || '',
+                azureApiKeyConfigured: !!tenantConfig?.azureApiKey,
+                azureEndpoint: tenantConfig?.azureEndpoint || '',
+            },
         });
     } catch (error) {
         next(error);
@@ -241,7 +262,7 @@ router.post('/switch-tenant', authenticateToken, async (req: AuthenticatedReques
 router.post('/profile', authenticateToken, async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
     try {
         const prisma: PrismaClient = req.app.locals.prisma;
-        const { makeApiKey, azureApiKey, azureEndpoint } = req.body;
+        const { makeApiKey, makeFolderId, makeOrgId, azureApiKey, azureEndpoint } = req.body;
         const tenantId = req.user!.tenantId;
 
         if (!tenantId) {
@@ -253,6 +274,8 @@ router.post('/profile', authenticateToken, async (req: AuthenticatedRequest, res
             where: { id: tenantId },
             data: {
                 makeApiKey: makeApiKey || undefined, // undefined means do not update if not provided
+                makeFolderId: makeFolderId !== undefined ? (makeFolderId || null) : undefined,
+                makeOrgId: makeOrgId !== undefined ? (makeOrgId || null) : undefined,
                 azureApiKey: azureApiKey || undefined,
                 azureEndpoint: azureEndpoint || undefined,
             },
@@ -272,6 +295,8 @@ router.post('/profile', authenticateToken, async (req: AuthenticatedRequest, res
         res.json({
             message: 'Profile updated successfully',
             makeApiKeyConfigured: !!updatedTenant.makeApiKey,
+            makeFolderIdConfigured: !!updatedTenant.makeFolderId,
+            makeOrgIdConfigured: !!updatedTenant.makeOrgId,
             azureApiKeyConfigured: !!updatedTenant.azureApiKey,
         });
     } catch (error) {

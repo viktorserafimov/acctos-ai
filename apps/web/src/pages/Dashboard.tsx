@@ -34,6 +34,8 @@ export default function Dashboard() {
     // Settings State
     const [showSettings, setShowSettings] = useState(false);
     const [makeApiKey, setMakeApiKey] = useState('');
+    const [makeFolderId, setMakeFolderId] = useState('');
+    const [makeOrgId, setMakeOrgId] = useState('');
     const [azureApiKey, setAzureApiKey] = useState('');
     const [azureEndpoint, setAzureEndpoint] = useState('');
     const [testingConnection, setTestingConnection] = useState(false);
@@ -77,12 +79,14 @@ export default function Dashboard() {
         try {
             await axios.post('/api/auth/profile', {
                 makeApiKey,
+                makeFolderId,
+                makeOrgId,
                 azureApiKey,
                 azureEndpoint
             });
             alert('Settings saved successfully!');
             setShowSettings(false);
-            setMakeApiKey(''); // Clear from memory
+            setMakeApiKey(''); // Clear secrets from memory
             setAzureApiKey('');
         } catch (error) {
             alert('Failed to save settings.');
@@ -136,17 +140,18 @@ export default function Dashboard() {
         fetchData();
     }, [period]);
 
-    // Fetch keys (partial obfuscated) when settings open
+    // Fetch integration config when settings open
     useEffect(() => {
         if (showSettings) {
             const loadProfile = async () => {
                 try {
                     const res = await axios.get('/api/auth/me');
-                    // We don't get actual keys back for security, but we could if we wanted to show placeholders
-                    // For now, let's just show empty or "Configured" status if we had that info.
-                    // Actually, let's just fetch from a new endpoint if we really needed to,
-                    // but usually we don't send back sensitive keys.
-                    // Let's rely on user inputting new keys to update.
+                    const integrations = res.data.integrations;
+                    if (integrations) {
+                        setMakeOrgId(integrations.makeOrgId || '');
+                        setMakeFolderId(integrations.makeFolderId || '');
+                        setAzureEndpoint(integrations.azureEndpoint || '');
+                    }
                 } catch (err) { console.error(err); }
             };
             loadProfile();
@@ -159,10 +164,16 @@ export default function Dashboard() {
     // Transform timeseries for chart
     const chartData = timeseries.map((point) => ({
         date: point.date,
-        'Make.com': point.make.cost,
+        'Make.com Credits': point.make.cost,
         'Azure OCR': point.azure.cost,
         'OpenAI': point.openai.cost,
     }));
+
+    // Calculate EUR-only total (Azure + OpenAI, excluding Make.com credits)
+    const azureCost = parseFloat(summary?.summary?.azure?.totalCost || '0');
+    const openaiCost = parseFloat(summary?.summary?.openai?.totalCost || '0');
+    const eurTotal = (azureCost + openaiCost).toFixed(4);
+    const eurEvents = (summary?.summary?.azure?.eventCount || 0) + (summary?.summary?.openai?.eventCount || 0);
 
     // 5. Render
     if (loading && !summary) {
@@ -203,6 +214,10 @@ export default function Dashboard() {
                         <RefreshCw size={16} />
                         Refresh / Sync
                     </button>
+                    <button className="btn-secondary" onClick={() => setShowSettings(true)}>
+                        <Settings size={16} />
+                        Settings
+                    </button>
                 </div>
             </div>
 
@@ -214,12 +229,12 @@ export default function Dashboard() {
                         <Zap size={20} color="#6366f1" />
                     </div>
                     <div className="usage-value">
-                        {summary?.summary?.make?.eventCount || 0}
-                        <span className="usage-unit">events</span>
+                        {parseFloat(summary?.summary?.make?.totalCost || '0').toFixed(2)}
+                        <span className="usage-unit">credits</span>
                     </div>
                     <div className="cost-display">
-                        <Euro size={18} />
-                        <span>{summary?.summary?.make?.totalCost || '0.00'} EUR</span>
+                        <Zap size={18} />
+                        <span>{summary?.summary?.make?.eventCount || 0} operations</span>
                     </div>
                 </div>
 
@@ -259,24 +274,24 @@ export default function Dashboard() {
                         <TrendingUp size={20} color="#f59e0b" />
                     </div>
                     <div className="usage-value" style={{ color: '#f59e0b' }}>
-                        {summary?.totals?.cost || '0.00'}
+                        {eurTotal}
                         <span className="usage-unit">EUR</span>
                     </div>
                     <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', marginTop: '1rem' }}>
-                        {summary?.totals?.events || 0} total events in {period}
+                        {eurEvents} Azure + OpenAI events in {period}
                     </p>
                 </div>
             </div>
 
             {/* Chart */}
             <div className="chart-section">
-                <h3 style={{ marginBottom: '1.5rem' }}>Cost Over Time</h3>
+                <h3 style={{ marginBottom: '1.5rem' }}>Usage Over Time</h3>
                 <div style={{ height: 400 }}>
                     <ResponsiveContainer>
                         <AreaChart data={chartData}>
                             <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
                             <XAxis dataKey="date" stroke="var(--text-muted)" />
-                            <YAxis stroke="var(--text-muted)" unit="€" />
+                            <YAxis stroke="var(--text-muted)" />
                             <Tooltip
                                 contentStyle={{
                                     backgroundColor: 'rgba(15, 23, 42, 0.95)',
@@ -285,13 +300,106 @@ export default function Dashboard() {
                                 }}
                             />
                             <Legend />
-                            <Area type="monotone" dataKey="Make.com" stroke="#6366f1" fill="#6366f1" fillOpacity={0.1} />
+                            <Area type="monotone" dataKey="Make.com Credits" stroke="#6366f1" fill="#6366f1" fillOpacity={0.1} />
                             <Area type="monotone" dataKey="Azure OCR" stroke="#ec4899" fill="#ec4899" fillOpacity={0.1} />
                             <Area type="monotone" dataKey="OpenAI" stroke="#10b981" fill="#10b981" fillOpacity={0.1} />
                         </AreaChart>
                     </ResponsiveContainer>
                 </div>
             </div>
+
+            {/* Settings Modal */}
+            {showSettings && (
+                <div className="modal-overlay" onClick={() => setShowSettings(false)}>
+                    <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
+                            <h3>Integration Settings</h3>
+                            <button onClick={() => setShowSettings(false)} style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer' }}>
+                                <X size={20} />
+                            </button>
+                        </div>
+                        <form onSubmit={handleSaveSettings}>
+                            <h4 style={{ marginBottom: '0.75rem', color: '#6366f1' }}>Make.com</h4>
+
+                            <label className="settings-label">API Key</label>
+                            <input
+                                type="password"
+                                className="settings-input"
+                                placeholder="Enter Make.com API Key"
+                                value={makeApiKey}
+                                onChange={(e) => setMakeApiKey(e.target.value)}
+                            />
+
+                            <label className="settings-label">Organization ID</label>
+                            <input
+                                type="text"
+                                className="settings-input"
+                                placeholder="e.g. 1054340"
+                                value={makeOrgId}
+                                onChange={(e) => setMakeOrgId(e.target.value)}
+                            />
+
+                            <label className="settings-label">Folder ID (optional - filters synced scenarios)</label>
+                            <input
+                                type="text"
+                                className="settings-input"
+                                placeholder="e.g. 449625"
+                                value={makeFolderId}
+                                onChange={(e) => setMakeFolderId(e.target.value)}
+                            />
+
+                            <button
+                                type="button"
+                                onClick={testMakeConnection}
+                                disabled={testingConnection}
+                                className="btn-secondary"
+                                style={{ marginTop: '0.75rem', marginBottom: '1rem' }}
+                            >
+                                {testingConnection ? 'Testing...' : 'Test Connection'}
+                            </button>
+
+                            {connectionStatus && (
+                                <div style={{
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: '0.5rem',
+                                    marginBottom: '1rem',
+                                    color: connectionStatus.success ? '#10b981' : '#ef4444'
+                                }}>
+                                    {connectionStatus.success ? <CheckCircle size={16} /> : <AlertCircle size={16} />}
+                                    <span style={{ fontSize: '0.85rem' }}>{connectionStatus.message}</span>
+                                </div>
+                            )}
+
+                            <hr style={{ border: 'none', borderTop: '1px solid var(--glass-border)', margin: '1.5rem 0' }} />
+
+                            <h4 style={{ marginBottom: '0.75rem', color: '#ec4899' }}>Azure OCR</h4>
+
+                            <label className="settings-label">API Key</label>
+                            <input
+                                type="password"
+                                className="settings-input"
+                                placeholder="Enter Azure API Key"
+                                value={azureApiKey}
+                                onChange={(e) => setAzureApiKey(e.target.value)}
+                            />
+
+                            <label className="settings-label">Endpoint</label>
+                            <input
+                                type="text"
+                                className="settings-input"
+                                placeholder="https://..."
+                                value={azureEndpoint}
+                                onChange={(e) => setAzureEndpoint(e.target.value)}
+                            />
+
+                            <button type="submit" className="btn-primary" style={{ marginTop: '1.5rem', width: '100%' }}>
+                                Save Settings
+                            </button>
+                        </form>
+                    </div>
+                </div>
+            )}
 
             <style>{`
         .page-header {
@@ -381,8 +489,60 @@ export default function Dashboard() {
           border-radius: 1.5rem;
           padding: 1.5rem;
         }
+        .modal-overlay {
+          position: fixed;
+          inset: 0;
+          background: rgba(0, 0, 0, 0.6);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          z-index: 1000;
+        }
+        .modal-content {
+          background: var(--background, #0f172a);
+          border: 1px solid var(--glass-border);
+          border-radius: 1.5rem;
+          padding: 2rem;
+          width: 100%;
+          max-width: 500px;
+          max-height: 80vh;
+          overflow-y: auto;
+        }
+        .settings-label {
+          display: block;
+          font-size: 0.85rem;
+          color: var(--text-muted);
+          margin-bottom: 0.25rem;
+          margin-top: 0.75rem;
+        }
+        .settings-input {
+          width: 100%;
+          padding: 0.6rem 1rem;
+          background: var(--surface);
+          border: 1px solid var(--glass-border);
+          border-radius: 0.75rem;
+          color: var(--text);
+          font-size: 0.9rem;
+          box-sizing: border-box;
+        }
+        .settings-input:focus {
+          outline: none;
+          border-color: var(--primary);
+        }
+        .btn-primary {
+          padding: 0.75rem 1.5rem;
+          background: var(--primary, #6366f1);
+          border: none;
+          border-radius: 0.75rem;
+          color: white;
+          font-weight: 600;
+          cursor: pointer;
+          transition: opacity 0.2s;
+        }
+        .btn-primary:hover {
+          opacity: 0.9;
+        }
       `}</style>
         </div>
     );
 }
-

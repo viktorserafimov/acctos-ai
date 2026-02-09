@@ -12,7 +12,10 @@ async function checkData() {
         // 1. Check Tenants
         const tenants = await prisma.tenant.findMany();
         console.log(`Found ${tenants.length} tenants:`);
-        tenants.forEach(t => console.log(` - ID: ${t.id}, Name: ${t.name}, API Key: ${t.makeApiKey}`));
+        tenants.forEach(t => {
+            const anyT = t as any;
+            console.log(` - ID: ${t.id}, Name: ${t.name}, API Key: ${t.makeApiKey}, OrgId: ${anyT.makeOrgId}, FolderId: ${anyT.makeFolderId}`);
+        });
 
         if (tenants.length === 0) {
             console.log('No tenants found. Creating a test tenant...');
