@@ -40,6 +40,7 @@ export default function Dashboard() {
     const [azureEndpoint, setAzureEndpoint] = useState('');
     const [testingConnection, setTestingConnection] = useState(false);
     const [connectionStatus, setConnectionStatus] = useState<{ success: boolean; message: string } | null>(null);
+    const [activeTab, setActiveTab] = useState<'infrastructure' | 'document'>('infrastructure');
 
     // 2. Helper Functions
     const fetchData = async () => {
@@ -221,92 +222,142 @@ export default function Dashboard() {
                 </div>
             </div>
 
-            {/* Stats Grid */}
-            <div className="stats-grid">
-                <div className="card">
-                    <div className="card-title">
-                        <h3>Make.com</h3>
-                        <Zap size={20} color="#6366f1" />
-                    </div>
-                    <div className="usage-value">
-                        {parseFloat(summary?.summary?.make?.totalCost || '0').toFixed(2)}
-                        <span className="usage-unit">credits</span>
-                    </div>
-                    <div className="cost-display">
-                        <Zap size={18} />
-                        <span>{summary?.summary?.make?.eventCount || 0} operations</span>
-                    </div>
-                </div>
-
-                <div className="card">
-                    <div className="card-title">
-                        <h3>Azure OCR</h3>
-                        <FileText size={20} color="#ec4899" />
-                    </div>
-                    <div className="usage-value">
-                        {summary?.summary?.azure?.eventCount || 0}
-                        <span className="usage-unit">events</span>
-                    </div>
-                    <div className="cost-display">
-                        <Euro size={18} />
-                        <span>{summary?.summary?.azure?.totalCost || '0.00'} EUR</span>
-                    </div>
-                </div>
-
-                <div className="card">
-                    <div className="card-title">
-                        <h3>OpenAI</h3>
-                        <Brain size={20} color="#10b981" />
-                    </div>
-                    <div className="usage-value">
-                        {summary?.summary?.openai?.totalTokens || 0}
-                        <span className="usage-unit">tokens</span>
-                    </div>
-                    <div className="cost-display">
-                        <Euro size={18} />
-                        <span>{summary?.summary?.openai?.totalCost || '0.00'} EUR</span>
-                    </div>
-                </div>
-
-                <div className="card aggregate-card">
-                    <div className="card-title">
-                        <h3>Total Cost</h3>
-                        <TrendingUp size={20} color="#f59e0b" />
-                    </div>
-                    <div className="usage-value" style={{ color: '#f59e0b' }}>
-                        {eurTotal}
-                        <span className="usage-unit">EUR</span>
-                    </div>
-                    <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', marginTop: '1rem' }}>
-                        {eurEvents} Azure + OpenAI events in {period}
-                    </p>
-                </div>
+            {/* Tab Switcher */}
+            <div className="tab-switcher">
+                <button
+                    className={`tab-btn ${activeTab === 'infrastructure' ? 'active' : ''}`}
+                    onClick={() => setActiveTab('infrastructure')}
+                >
+                    Infrastructure Usage
+                </button>
+                <button
+                    className={`tab-btn ${activeTab === 'document' ? 'active' : ''}`}
+                    onClick={() => setActiveTab('document')}
+                >
+                    Document Usage
+                </button>
             </div>
 
-            {/* Chart */}
-            <div className="chart-section">
-                <h3 style={{ marginBottom: '1.5rem' }}>Usage Over Time</h3>
-                <div style={{ height: 400 }}>
-                    <ResponsiveContainer>
-                        <AreaChart data={chartData}>
-                            <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
-                            <XAxis dataKey="date" stroke="var(--text-muted)" />
-                            <YAxis stroke="var(--text-muted)" />
-                            <Tooltip
-                                contentStyle={{
-                                    backgroundColor: 'rgba(15, 23, 42, 0.95)',
-                                    borderRadius: '0.75rem',
-                                    border: '1px solid var(--glass-border)',
-                                }}
-                            />
-                            <Legend />
-                            <Area type="monotone" dataKey="Make.com Credits" stroke="#6366f1" fill="#6366f1" fillOpacity={0.1} />
-                            <Area type="monotone" dataKey="Azure OCR" stroke="#ec4899" fill="#ec4899" fillOpacity={0.1} />
-                            <Area type="monotone" dataKey="OpenAI" stroke="#10b981" fill="#10b981" fillOpacity={0.1} />
-                        </AreaChart>
-                    </ResponsiveContainer>
+            {activeTab === 'infrastructure' ? (
+                <>
+                    {/* Stats Grid */}
+                    <div className="stats-grid">
+                        <div className="card">
+                            <div className="card-title">
+                                <h3>Make.com</h3>
+                                <Zap size={20} color="#6366f1" />
+                            </div>
+                            <div className="usage-value">
+                                {parseFloat(summary?.summary?.make?.totalCost || '0').toFixed(2)}
+                                <span className="usage-unit">credits</span>
+                            </div>
+                            <div className="cost-display">
+                                <Zap size={18} />
+                                <span>{summary?.summary?.make?.eventCount || 0} operations</span>
+                            </div>
+                        </div>
+
+                        <div className="card">
+                            <div className="card-title">
+                                <h3>Azure OCR</h3>
+                                <FileText size={20} color="#ec4899" />
+                            </div>
+                            <div className="usage-value">
+                                {summary?.summary?.azure?.eventCount || 0}
+                                <span className="usage-unit">events</span>
+                            </div>
+                            <div className="cost-display">
+                                <Euro size={18} />
+                                <span>{summary?.summary?.azure?.totalCost || '0.00'} EUR</span>
+                            </div>
+                        </div>
+
+                        <div className="card">
+                            <div className="card-title">
+                                <h3>OpenAI</h3>
+                                <Brain size={20} color="#10b981" />
+                            </div>
+                            <div className="usage-value">
+                                {summary?.summary?.openai?.totalTokens || 0}
+                                <span className="usage-unit">tokens</span>
+                            </div>
+                            <div className="cost-display">
+                                <Euro size={18} />
+                                <span>{summary?.summary?.openai?.totalCost || '0.00'} EUR</span>
+                            </div>
+                        </div>
+
+                        <div className="card aggregate-card">
+                            <div className="card-title">
+                                <h3>Total Cost</h3>
+                                <TrendingUp size={20} color="#f59e0b" />
+                            </div>
+                            <div className="usage-value" style={{ color: '#f59e0b' }}>
+                                {eurTotal}
+                                <span className="usage-unit">EUR</span>
+                            </div>
+                            <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', marginTop: '1rem' }}>
+                                {eurEvents} Azure + OpenAI events in {period}
+                            </p>
+                        </div>
+                    </div>
+
+                    {/* Chart */}
+                    <div className="chart-section">
+                        <h3 style={{ marginBottom: '1.5rem' }}>Usage Over Time</h3>
+                        <div style={{ height: 400 }}>
+                            <ResponsiveContainer>
+                                <AreaChart data={chartData}>
+                                    <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
+                                    <XAxis dataKey="date" stroke="var(--text-muted)" />
+                                    <YAxis stroke="var(--text-muted)" />
+                                    <Tooltip
+                                        contentStyle={{
+                                            backgroundColor: 'rgba(15, 23, 42, 0.95)',
+                                            borderRadius: '0.75rem',
+                                            border: '1px solid var(--glass-border)',
+                                        }}
+                                    />
+                                    <Legend />
+                                    <Area type="monotone" dataKey="Make.com Credits" stroke="#6366f1" fill="#6366f1" fillOpacity={0.1} />
+                                    <Area type="monotone" dataKey="Azure OCR" stroke="#ec4899" fill="#ec4899" fillOpacity={0.1} />
+                                    <Area type="monotone" dataKey="OpenAI" stroke="#10b981" fill="#10b981" fillOpacity={0.1} />
+                                </AreaChart>
+                            </ResponsiveContainer>
+                        </div>
+                    </div>
+                </>
+            ) : (
+                <div className="stats-grid">
+                    <div className="card">
+                        <div className="card-title">
+                            <h3>Pages Spent</h3>
+                            <FileText size={20} color="#6366f1" />
+                        </div>
+                        <div className="usage-value">
+                            0
+                            <span className="usage-unit">pages</span>
+                        </div>
+                        <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', marginTop: '1rem' }}>
+                            Total number of pages processed in {period}
+                        </p>
+                    </div>
+
+                    <div className="card">
+                        <div className="card-title">
+                            <h3>Rows Used</h3>
+                            <TrendingUp size={20} color="#ec4899" />
+                        </div>
+                        <div className="usage-value">
+                            0
+                            <span className="usage-unit">rows</span>
+                        </div>
+                        <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', marginTop: '1rem' }}>
+                            Total number of data rows extracted in {period}
+                        </p>
+                    </div>
                 </div>
-            </div>
+            )}
 
             {/* Settings Modal */}
             {showSettings && (
@@ -434,6 +485,34 @@ export default function Dashboard() {
         .btn-secondary:hover {
           border-color: var(--primary);
           color: var(--primary);
+        }
+        .tab-switcher {
+          display: flex;
+          gap: 1rem;
+          margin-bottom: 2rem;
+          padding: 0.25rem;
+          background: var(--surface);
+          border: 1px solid var(--glass-border);
+          border-radius: 1rem;
+          width: fit-content;
+        }
+        .tab-btn {
+          padding: 0.6rem 1.5rem;
+          border: none;
+          background: none;
+          color: var(--text-muted);
+          font-weight: 600;
+          cursor: pointer;
+          border-radius: 0.75rem;
+          transition: all 0.2s;
+        }
+        .tab-btn:hover {
+          color: var(--text);
+        }
+        .tab-btn.active {
+          background: var(--primary);
+          color: white;
+          box-shadow: 0 4px 12px rgba(99, 102, 241, 0.3);
         }
         .stats-grid {
           display: grid;
