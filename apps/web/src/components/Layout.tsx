@@ -9,6 +9,7 @@ import {
     ChevronDown,
     Building2,
     User as UserIcon,
+    Users as UsersIcon,
 } from 'lucide-react';
 
 interface LayoutProps {
@@ -16,7 +17,7 @@ interface LayoutProps {
 }
 
 export default function Layout({ children }: LayoutProps) {
-    const { user, tenants, activeTenant, logout, switchTenant } = useAuth();
+    const { user, tenants, activeTenant, logout, switchTenant, isAdmin } = useAuth();
     const [showTenantMenu, setShowTenantMenu] = useState(false);
     const navigate = useNavigate();
 
@@ -99,6 +100,12 @@ export default function Layout({ children }: LayoutProps) {
                         <HelpCircle size={20} />
                         <span>Support</span>
                     </NavLink>
+                    {isAdmin && (
+                        <NavLink to="/users" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
+                            <UsersIcon size={20} />
+                            <span>Users</span>
+                        </NavLink>
+                    )}
                 </nav>
 
                 {/* Content */}

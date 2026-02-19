@@ -174,6 +174,12 @@ router.get('/me', authenticateToken, async (req: AuthenticatedRequest, res: Resp
             return next(createError('User not found', 404, 'NOT_FOUND'));
         }
 
+        // Get current role for active tenant
+        const currentMembership = user.memberships.find(
+            (m: any) => m.tenantId === req.user!.tenantId
+        );
+        const currentRole = currentMembership?.role ?? null;
+
         // Fetch integration config status for the active tenant
         const tenantConfig = req.user!.tenantId
             ? await prisma.tenant.findUnique({
@@ -192,6 +198,7 @@ router.get('/me', authenticateToken, async (req: AuthenticatedRequest, res: Resp
             id: user.id,
             email: user.email,
             name: user.name,
+            currentRole,
             tenants: user.memberships.map((m: any) => ({
                 id: m.tenant.id,
                 name: m.tenant.name,

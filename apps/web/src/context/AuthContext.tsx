@@ -21,11 +21,16 @@ interface AuthContextType {
     activeTenant: Tenant | null;
     token: string | null;
     isLoading: boolean;
+    currentRole: string | null;
+    isAdmin: boolean;
+    isUser: boolean;
     login: (email: string, password: string) => Promise<void>;
     register: (email: string, password: string, name: string, tenantName: string) => Promise<void>;
     logout: () => void;
     switchTenant: (tenantId: string) => Promise<void>;
 }
+
+const ADMIN_ROLES = ['ORG_OWNER', 'ADMIN'];
 
 const AuthContext = createContext<AuthContextType | null>(null);
 
@@ -43,6 +48,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const [activeTenant, setActiveTenant] = useState<Tenant | null>(null);
     const [token, setToken] = useState<string | null>(() => localStorage.getItem('token'));
     const [isLoading, setIsLoading] = useState(true);
+    const [currentRole, setCurrentRole] = useState<string | null>(null);
+
+    const isAdmin = currentRole !== null && ADMIN_ROLES.includes(currentRole);
+    const isUser = currentRole === 'MEMBER';
 
     // Configure axios defaults
     useEffect(() => {
@@ -70,6 +79,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 name: response.data.name,
             });
             setTenants(response.data.tenants);
+            setCurrentRole(response.data.currentRole);
 
             // Set active tenant
             const activeTenantId = response.data.activeTenant;
@@ -98,11 +108,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setTenants(response.data.tenants);
         const active = response.data.tenants.find((t: Tenant) => t.id === response.data.activeTenant);
         setActiveTenant(active || response.data.tenants[0] || null);
+        // Set role from the active tenant's membership
+        if (active) {
+            setCurrentRole(active.role);
+        }
     };
 
     const register = async (email: string, password: string, name: string, tenantName: string) => {
         await axios.post('/api/auth/register', { email, password, name, tenantName });
-        // After registration, user needs to login
     };
 
     const logout = () => {
@@ -110,12 +123,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setUser(null);
         setTenants([]);
         setActiveTenant(null);
+        setCurrentRole(null);
     };
 
     const switchTenant = async (tenantId: string) => {
         const response = await axios.post('/api/auth/switch-tenant', { tenantId });
         setToken(response.data.token);
         setActiveTenant(response.data.tenant);
+        setCurrentRole(response.data.tenant.role);
     };
 
     return (
@@ -126,6 +141,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 activeTenant,
                 token,
                 isLoading,
+                currentRole,
+                isAdmin,
+                isUser,
                 login,
                 register,
                 logout,

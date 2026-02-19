@@ -1,0 +1,138 @@
+import { Router, Response, NextFunction } from 'express';
+import bcrypt from 'bcryptjs';
+import { z } from 'zod';
+import { PrismaClient } from '@prisma/client';
+import { authenticateToken, requireRole, AuthenticatedRequest } from '../middleware/auth.js';
+import { createError } from '../middleware/errorHandler.js';
+import { ADMIN_ROLES } from '../utils/roles.js';
+
+const router = Router();
+
+// All user management routes require authentication + admin role
+router.use(authenticateToken);
+
+const createUserSchema = z.object({
+    email: z.string().email(),
+    password: z.string().min(8),
+    name: z.string().optional(),
+    role: z.enum(['ADMIN', 'MEMBER']),
+});
+
+/**
+ * GET /v1/users
+ *
+ * List all users in the current tenant.
+ */
+router.get('/', requireRole(...ADMIN_ROLES), async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+    try {
+        const prisma: PrismaClient = req.app.locals.prisma;
+        const tenantId = req.user!.tenantId;
+
+        if (!tenantId) {
+            return next(createError('No tenant selected', 400, 'NO_TENANT'));
+        }
+
+        const memberships = await prisma.membership.findMany({
+            where: { tenantId },
+            include: {
+                user: {
+                    select: { id: true, email: true, name: true, createdAt: true },
+                },
+            },
+            orderBy: { user: { createdAt: 'desc' } },
+        });
+
+        res.json({
+            users: memberships.map((m: any) => ({
+                ...m.user,
+                role: m.role,
+                membershipId: m.id,
+            })),
+        });
+    } catch (error) {
+        next(error);
+    }
+});
+
+/**
+ * POST /v1/users
+ *
+ * Create a new user and add them to the current tenant.
+ */
+router.post('/', requireRole(...ADMIN_ROLES), async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+    try {
+        const prisma: PrismaClient = req.app.locals.prisma;
+        const tenantId = req.user!.tenantId;
+
+        if (!tenantId) {
+            return next(createError('No tenant selected', 400, 'NO_TENANT'));
+        }
+
+        const body = createUserSchema.parse(req.body);
+        const hashedPassword = await bcrypt.hash(body.password, 10);
+
+        let user = await prisma.user.findUnique({ where: { email: body.email } });
+
+        if (!user) {
+            user = await prisma.user.create({
+                data: { email: body.email, password: hashedPassword, name: body.name },
+            });
+        }
+
+        // Check if user already has access to this tenant
+        const existingMembership = await prisma.membership.findFirst({
+            where: { userId: user.id, tenantId },
+        });
+
+        if (existingMembership) {
+            return res.status(409).json({
+                error: { message: 'User already has access to this tenant', code: 'DUPLICATE_MEMBERSHIP' },
+            });
+        }
+
+        const membership = await prisma.membership.create({
+            data: { userId: user.id, tenantId, role: body.role },
+        });
+
+        res.status(201).json({
+            user: { id: user.id, email: user.email, name: user.name, role: membership.role, membershipId: membership.id },
+        });
+    } catch (error) {
+        if (error instanceof z.ZodError) {
+            return next(createError('Invalid input: ' + error.errors[0].message, 400, 'VALIDATION_ERROR'));
+        }
+        next(error);
+    }
+});
+
+/**
+ * DELETE /v1/users/:membershipId
+ *
+ * Remove a user from the current tenant.
+ */
+router.delete('/:membershipId', requireRole(...ADMIN_ROLES), async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+    try {
+        const prisma: PrismaClient = req.app.locals.prisma;
+        const tenantId = req.user!.tenantId;
+
+        const membership = await prisma.membership.findFirst({
+            where: { id: req.params.membershipId, tenantId },
+        });
+
+        if (!membership) {
+            return next(createError('User not found in this tenant', 404, 'NOT_FOUND'));
+        }
+
+        // Prevent deleting yourself
+        if (membership.userId === req.user!.id) {
+            return next(createError('Cannot remove yourself', 400, 'SELF_DELETE'));
+        }
+
+        await prisma.membership.delete({ where: { id: membership.id } });
+        res.json({ success: true });
+    } catch (error) {
+        next(error);
+    }
+});
+
+export { router as usersRouter };

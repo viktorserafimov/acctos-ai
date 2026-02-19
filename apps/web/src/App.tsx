@@ -5,6 +5,7 @@ import LandingPage from './pages/LandingPage';
 import Dashboard from './pages/Dashboard';
 import Billing from './pages/Billing';
 import Tickets from './pages/Tickets';
+import Users from './pages/Users';
 import Layout from './components/Layout';
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
@@ -21,6 +22,25 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
 
     if (!token) {
         return <Navigate to="/" replace />;
+    }
+
+    return <>{children}</>;
+}
+
+function AdminRoute({ children }: { children: React.ReactNode }) {
+    const { isAdmin, isLoading } = useAuth();
+
+    if (isLoading) {
+        return (
+            <div className="loading-container">
+                <div className="spinner"></div>
+                <p style={{ marginTop: '1rem', color: 'var(--text-muted)' }}>Loading...</p>
+            </div>
+        );
+    }
+
+    if (!isAdmin) {
+        return <Navigate to="/dashboard" replace />;
     }
 
     return <>{children}</>;
@@ -80,6 +100,18 @@ function AppRoutes() {
                         <Layout>
                             <Tickets />
                         </Layout>
+                    </ProtectedRoute>
+                }
+            />
+            <Route
+                path="/users"
+                element={
+                    <ProtectedRoute>
+                        <AdminRoute>
+                            <Layout>
+                                <Users />
+                            </Layout>
+                        </AdminRoute>
                     </ProtectedRoute>
                 }
             />

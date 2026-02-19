@@ -4,6 +4,7 @@ import {
     AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
 } from 'recharts';
 import { Zap, FileText, TrendingUp, RefreshCw, Euro, Download, Brain, Settings, X, CheckCircle, AlertCircle } from 'lucide-react';
+import { useAuth } from '../context/AuthContext';
 
 interface UsageSummary {
     period: string;
@@ -39,6 +40,8 @@ interface DocumentUsageData {
 // ... inside Dashboard component ...
 
 export default function Dashboard() {
+    const { isAdmin } = useAuth();
+
     // 1. All State Hooks
     const [summary, setSummary] = useState<UsageSummary | null>(null);
     const [timeseries, setTimeseries] = useState<TimeseriesPoint[]>([]);
@@ -55,7 +58,7 @@ export default function Dashboard() {
     const [azureEndpoint, setAzureEndpoint] = useState('');
     const [testingConnection, setTestingConnection] = useState(false);
     const [connectionStatus, setConnectionStatus] = useState<{ success: boolean; message: string } | null>(null);
-    const [activeTab, setActiveTab] = useState<'infrastructure' | 'document'>('infrastructure');
+    const [activeTab, setActiveTab] = useState<'infrastructure' | 'document'>(isAdmin ? 'infrastructure' : 'document');
     const [syncCooldown, setSyncCooldown] = useState(false);
 
     // 2. Helper Functions
@@ -281,12 +284,14 @@ export default function Dashboard() {
 
             {/* Tab Switcher */}
             <div className="tab-switcher">
-                <button
-                    className={`tab-btn ${activeTab === 'infrastructure' ? 'active' : ''}`}
-                    onClick={() => setActiveTab('infrastructure')}
-                >
-                    Infrastructure Usage
-                </button>
+                {isAdmin && (
+                    <button
+                        className={`tab-btn ${activeTab === 'infrastructure' ? 'active' : ''}`}
+                        onClick={() => setActiveTab('infrastructure')}
+                    >
+                        Infrastructure Usage
+                    </button>
+                )}
                 <button
                     className={`tab-btn ${activeTab === 'document' ? 'active' : ''}`}
                     onClick={() => setActiveTab('document')}
@@ -295,7 +300,7 @@ export default function Dashboard() {
                 </button>
             </div>
 
-            {activeTab === 'infrastructure' ? (
+            {isAdmin && activeTab === 'infrastructure' ? (
                 <>
                     {/* Stats Grid */}
                     <div className="stats-grid">

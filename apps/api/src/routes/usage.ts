@@ -1,7 +1,8 @@
 import { Router, Response, NextFunction } from 'express';
 import { PrismaClient } from '@prisma/client';
-import { authenticateToken, AuthenticatedRequest } from '../middleware/auth.js';
+import { authenticateToken, requireRole, AuthenticatedRequest } from '../middleware/auth.js';
 import { createError } from '../middleware/errorHandler.js';
+import { ADMIN_ROLES } from '../utils/roles.js';
 
 const router = Router();
 
@@ -13,7 +14,7 @@ router.use(authenticateToken);
  * 
  * Returns aggregated usage summary for the current tenant.
  */
-router.get('/summary', async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+router.get('/summary', requireRole(...ADMIN_ROLES), async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
     try {
         const prisma: PrismaClient = req.app.locals.prisma;
         const tenantId = req.user!.tenantId;
@@ -88,7 +89,7 @@ router.get('/summary', async (req: AuthenticatedRequest, res: Response, next: Ne
  * 
  * Returns daily usage data for charts.
  */
-router.get('/timeseries', async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+router.get('/timeseries', requireRole(...ADMIN_ROLES), async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
     try {
         const prisma: PrismaClient = req.app.locals.prisma;
         const tenantId = req.user!.tenantId;
@@ -154,7 +155,7 @@ router.get('/timeseries', async (req: AuthenticatedRequest, res: Response, next:
  * 
  * Export usage data as CSV.
  */
-router.get('/exports', async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+router.get('/exports', requireRole(...ADMIN_ROLES), async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
     try {
         const prisma: PrismaClient = req.app.locals.prisma;
         const tenantId = req.user!.tenantId;

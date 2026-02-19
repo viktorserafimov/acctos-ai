@@ -8,6 +8,7 @@ import { eventsRouter } from './routes/events.js';
 import { ticketsRouter } from './routes/tickets.js';
 import { billingRouter } from './routes/billing.js';
 import { documentUsageRouter } from './routes/documentUsage.js';
+import { usersRouter } from './routes/users.js';
 import { errorHandler } from './middleware/errorHandler.js';
 
 dotenv.config();
@@ -43,6 +44,7 @@ app.use('/api/auth', authRouter);
 app.use('/api/usage', documentUsageRouter);
 app.use('/v1/events', eventsRouter);
 app.use('/v1/usage', usageRouter);
+app.use('/v1/users', usersRouter);
 app.use('/v1/tickets', ticketsRouter);
 app.use('/v1/billing', billingRouter);
 app.use('/v1/integrations', integrationsRouter);
