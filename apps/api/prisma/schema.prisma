@@ -22,11 +22,12 @@ model Tenant {
   updatedAt DateTime @updatedAt
 
   // Relations
-  memberships  Membership[]
-  usageEvents  UsageEvent[]
-  tickets      Ticket[]
-  subscription Subscription?
-  auditLogs    AuditLog[]
+  memberships          Membership[]
+  usageEvents          UsageEvent[]
+  documentUsageEvents  DocumentUsageEvent[]
+  tickets              Ticket[]
+  subscription         Subscription?
+  auditLogs            AuditLog[]
 
   // Integrations
   makeApiKey    String?
@@ -115,6 +116,46 @@ model UsageAggregate {
 
   @@unique([tenantId, date, source, documentType, fileType, step, bankCode])
   @@index([tenantId, date])
+}
+
+// =====================
+// Document Usage Models
+// =====================
+
+// Raw document usage events (append-only)
+model DocumentUsageEvent {
+  id             String   @id @default(cuid())
+  customerId     String
+  idempotencyKey String
+  pagesSpent     Int
+  rowsUsed       Int
+  jobId          String?
+  scenarioId     String?
+  scenarioName   String?
+  timestamp      DateTime @default(now())
+  createdAt      DateTime @default(now())
+
+  // Relation to tenant (customerId maps to tenant.id)
+  tenant Tenant @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@unique([customerId, idempotencyKey])
+  @@index([customerId, timestamp])
+  @@index([jobId])
+  @@map("document_usage_events")
+}
+
+// Daily aggregates for fast dashboard queries
+model DocumentUsageAggregate {
+  id         String   @id @default(cuid())
+  customerId String
+  date       DateTime @db.Date
+  pagesSpent Int      @default(0)
+  rowsUsed   Int      @default(0)
+  eventCount Int      @default(0)
+
+  @@unique([customerId, date])
+  @@index([customerId, date])
+  @@map("document_usage_aggregates")
 }
 
 // =====================

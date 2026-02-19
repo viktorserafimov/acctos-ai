@@ -181,7 +181,7 @@ router.post('/make/sync', async (req: AuthenticatedRequest, res: Response, next:
         const scenariosRes = await axios.get(scenariosUrl, axiosConfig);
         const scenarios = scenariosRes.data.scenarios;
 
-        debugLog(`[Make Sync] Found ${scenarios.length} scenarios${tenant.makeFolderId ? ` in folder ${tenant.makeFolderId}` : ''}. Fetching usage...`);
+        console.log(`[Make Sync] Found ${scenarios.length} scenarios${tenant.makeFolderId ? ` in folder ${tenant.makeFolderId}` : ''}. Fetching usage...`);
 
         // 3. Fetch Usage for each scenario (Last 30 days)
         const usageByDate: Record<string, { ops: number; data: number; centicredits: number }> = {};

@@ -21,6 +21,20 @@ interface TimeseriesPoint {
     total: { events: number; cost: number };
 }
 
+interface DocumentUsageData {
+    customerId: string;
+    from: string | null;
+    to: string | null;
+    days: Array<{
+        date: string;
+        pagesSpent: number;
+        rowsUsed: number;
+    }>;
+    totals: {
+        pagesSpent: number;
+        rowsUsed: number;
+    };
+}
 
 // ... inside Dashboard component ...
 
@@ -28,6 +42,7 @@ export default function Dashboard() {
     // 1. All State Hooks
     const [summary, setSummary] = useState<UsageSummary | null>(null);
     const [timeseries, setTimeseries] = useState<TimeseriesPoint[]>([]);
+    const [documentUsage, setDocumentUsage] = useState<DocumentUsageData | null>(null);
     const [loading, setLoading] = useState(true);
     const [period, setPeriod] = useState('30d');
 
@@ -41,6 +56,7 @@ export default function Dashboard() {
     const [testingConnection, setTestingConnection] = useState(false);
     const [connectionStatus, setConnectionStatus] = useState<{ success: boolean; message: string } | null>(null);
     const [activeTab, setActiveTab] = useState<'infrastructure' | 'document'>('infrastructure');
+    const [syncCooldown, setSyncCooldown] = useState(false);
 
     // 2. Helper Functions
     const fetchData = async () => {
@@ -61,17 +77,54 @@ export default function Dashboard() {
         }
     };
 
-    const handleSync = async () => {
+    const fetchDocumentUsage = async () => {
         setLoading(true);
         try {
-            // Trigger backend sync
-            await axios.post('/v1/integrations/make/sync');
-            // Then refresh data
-            await fetchData();
+            console.log('Fetching document usage data for period:', period);
+
+            // Calculate date range based on period
+            const days = parseInt(period.replace('d', ''));
+            const toDate = new Date();
+            const fromDate = new Date();
+            fromDate.setDate(toDate.getDate() - days);
+
+            const from = fromDate.toISOString().split('T')[0];
+            const to = toDate.toISOString().split('T')[0];
+
+            // Use JWT-authenticated endpoint (no API key needed)
+            const response = await axios.get('/v1/usage/document-usage', {
+                params: { from, to }
+            });
+
+            console.log('Document usage data received:', response.data);
+            setDocumentUsage(response.data);
+        } catch (error) {
+            console.error('Failed to fetch document usage data:', error);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const handleSync = async () => {
+        if (syncCooldown) return;
+
+        setSyncCooldown(true);
+        setTimeout(() => setSyncCooldown(false), 5000);
+
+        setLoading(true);
+        try {
+            if (activeTab === 'document') {
+                await fetchDocumentUsage();
+            } else {
+                // Trigger backend sync
+                await axios.post('/v1/integrations/make/sync');
+                // Then refresh data
+                await fetchData();
+            }
         } catch (error) {
             console.error('Sync failed:', error);
             setLoading(false);
-            alert('Failed to sync data with Make.com');
+            alert('Failed to sync data');
         }
     };
 
@@ -138,8 +191,12 @@ export default function Dashboard() {
 
     // 3. Effects
     useEffect(() => {
-        fetchData();
-    }, [period]);
+        if (activeTab === 'infrastructure') {
+            fetchData();
+        } else {
+            fetchDocumentUsage();
+        }
+    }, [period, activeTab]);
 
     // Fetch integration config when settings open
     useEffect(() => {
@@ -211,9 +268,9 @@ export default function Dashboard() {
                         <Download size={16} />
                         Export
                     </button>
-                    <button className="btn-secondary" onClick={handleSync}>
+                    <button className="btn-secondary" onClick={handleSync} disabled={syncCooldown || loading}>
                         <RefreshCw size={16} />
-                        Refresh / Sync
+                        {syncCooldown ? 'Wait...' : 'Refresh / Sync'}
                     </button>
                     <button className="btn-secondary" onClick={() => setShowSettings(true)}>
                         <Settings size={16} />
@@ -328,35 +385,62 @@ export default function Dashboard() {
                     </div>
                 </>
             ) : (
-                <div className="stats-grid">
-                    <div className="card">
-                        <div className="card-title">
-                            <h3>Pages Spent</h3>
-                            <FileText size={20} color="#6366f1" />
+                <>
+                    <div className="stats-grid">
+                        <div className="card">
+                            <div className="card-title">
+                                <h3>Pages Spent</h3>
+                                <FileText size={20} color="#6366f1" />
+                            </div>
+                            <div className="usage-value">
+                                {documentUsage?.totals.pagesSpent.toLocaleString() || 0}
+                                <span className="usage-unit">pages</span>
+                            </div>
+                            <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', marginTop: '1rem' }}>
+                                Total number of pages processed in {period}
+                            </p>
                         </div>
-                        <div className="usage-value">
-                            0
-                            <span className="usage-unit">pages</span>
+
+                        <div className="card">
+                            <div className="card-title">
+                                <h3>Rows Used</h3>
+                                <TrendingUp size={20} color="#ec4899" />
+                            </div>
+                            <div className="usage-value">
+                                {documentUsage?.totals.rowsUsed.toLocaleString() || 0}
+                                <span className="usage-unit">rows</span>
+                            </div>
+                            <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', marginTop: '1rem' }}>
+                                Total number of data rows extracted in {period}
+                            </p>
                         </div>
-                        <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', marginTop: '1rem' }}>
-                            Total number of pages processed in {period}
-                        </p>
                     </div>
 
-                    <div className="card">
-                        <div className="card-title">
-                            <h3>Rows Used</h3>
-                            <TrendingUp size={20} color="#ec4899" />
+                    {documentUsage && documentUsage.days.length > 0 && (
+                        <div className="card" style={{ marginTop: '1.5rem' }}>
+                            <h3 style={{ marginBottom: '1.5rem' }}>Document Usage Over Time</h3>
+                            <div style={{ height: 400 }}>
+                                <ResponsiveContainer>
+                                    <AreaChart data={documentUsage.days}>
+                                        <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
+                                        <XAxis dataKey="date" stroke="var(--text-muted)" />
+                                        <YAxis stroke="var(--text-muted)" />
+                                        <Tooltip
+                                            contentStyle={{
+                                                backgroundColor: 'rgba(15, 23, 42, 0.95)',
+                                                borderRadius: '0.75rem',
+                                                border: '1px solid var(--glass-border)',
+                                            }}
+                                        />
+                                        <Legend />
+                                        <Area type="monotone" dataKey="pagesSpent" name="Pages Spent" stroke="#6366f1" fill="#6366f1" fillOpacity={0.1} />
+                                        <Area type="monotone" dataKey="rowsUsed" name="Rows Used" stroke="#ec4899" fill="#ec4899" fillOpacity={0.1} />
+                                    </AreaChart>
+                                </ResponsiveContainer>
+                            </div>
                         </div>
-                        <div className="usage-value">
-                            0
-                            <span className="usage-unit">rows</span>
-                        </div>
-                        <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', marginTop: '1rem' }}>
-                            Total number of data rows extracted in {period}
-                        </p>
-                    </div>
-                </div>
+                    )}
+                </>
             )}
 
             {/* Settings Modal */}

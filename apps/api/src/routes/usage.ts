@@ -199,4 +199,65 @@ router.get('/exports', async (req: AuthenticatedRequest, res: Response, next: Ne
     }
 });
 
+/**
+ * GET /v1/usage/document-usage
+ *
+ * Query document usage for the authenticated tenant (JWT-based).
+ * This is for dashboard use - no API key required.
+ */
+router.get('/document-usage', async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+    try {
+        const prisma: PrismaClient = req.app.locals.prisma;
+        const tenantId = req.user!.tenantId;
+
+        if (!tenantId) {
+            return next(createError('No tenant selected', 400, 'NO_TENANT'));
+        }
+
+        // Get query parameters
+        const from = req.query.from as string;
+        const to = req.query.to as string;
+
+        // Build where clause
+        const where: any = { customerId: tenantId };
+
+        if (from || to) {
+            where.date = {};
+            if (from) {
+                where.date.gte = new Date(from);
+            }
+            if (to) {
+                where.date.lte = new Date(to);
+            }
+        }
+
+        // Get aggregated data
+        const aggregates = await prisma.documentUsageAggregate.findMany({
+            where,
+            orderBy: { date: 'asc' },
+        });
+
+        // Calculate totals
+        const totals = {
+            pagesSpent: aggregates.reduce((sum, agg) => sum + agg.pagesSpent, 0),
+            rowsUsed: aggregates.reduce((sum, agg) => sum + agg.rowsUsed, 0),
+        };
+
+        // Format response
+        res.json({
+            customerId: tenantId,
+            from: from || null,
+            to: to || null,
+            days: aggregates.map(agg => ({
+                date: agg.date.toISOString().split('T')[0],
+                pagesSpent: agg.pagesSpent,
+                rowsUsed: agg.rowsUsed,
+            })),
+            totals,
+        });
+    } catch (error) {
+        next(error);
+    }
+});
+
 export { router as usageRouter };

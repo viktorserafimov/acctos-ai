@@ -7,6 +7,7 @@ import { usageRouter } from './routes/usage.js';
 import { eventsRouter } from './routes/events.js';
 import { ticketsRouter } from './routes/tickets.js';
 import { billingRouter } from './routes/billing.js';
+import { documentUsageRouter } from './routes/documentUsage.js';
 import { errorHandler } from './middleware/errorHandler.js';
 
 dotenv.config();
@@ -39,6 +40,7 @@ import { integrationsRouter } from './routes/integrations.js';
 
 // API Routes
 app.use('/api/auth', authRouter);
+app.use('/api/usage', documentUsageRouter);
 app.use('/v1/events', eventsRouter);
 app.use('/v1/usage', usageRouter);
 app.use('/v1/tickets', ticketsRouter);

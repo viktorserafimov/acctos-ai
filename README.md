@@ -85,6 +85,10 @@ acctos-ai/
 ### Event Ingestion (for Make.com)
 - `POST /v1/events/ingest` - Submit usage event (requires HMAC)
 
+### Document Usage (for Make.com document processing)
+- `POST /api/usage/document` - Ingest document usage (pages & rows)
+- `GET /api/usage/document` - Query aggregated document usage
+
 ### Usage
 - `GET /v1/usage/summary` - Aggregated usage stats
 - `GET /v1/usage/timeseries` - Daily usage for charts
@@ -108,10 +112,80 @@ acctos-ai/
 | `DATABASE_URL` | PostgreSQL connection string |
 | `JWT_SECRET` | Secret for JWT signing |
 | `HMAC_SECRET` | Secret for event ingestion verification |
+| `USAGE_API_KEY` | API key for document usage endpoints |
 | `STRIPE_SECRET_KEY` | Stripe API key (optional) |
+
+## Document Usage API Configuration
+
+### Make.com HTTP Module Setup
+
+To send document usage data from Make.com to the API:
+
+1. **Add HTTP Module** in your Make.com scenario
+2. **Configure the request:**
+
+   **URL:** `https://your-domain.com/api/usage/document`
+   (For local testing: `http://localhost:5000/api/usage/document`)
+
+   **Method:** `POST`
+
+   **Headers:**
+   ```
+   Content-Type: application/json
+   X-API-Key: your-api-key-from-env
+   Idempotency-Key: {{unique-identifier}}
+   ```
+
+   **Body (JSON):**
+   ```json
+   {
+     "customerId": "{{tenantId}}",
+     "pagesSpent": {{pageCount}},
+     "rowsUsed": {{rowCount}},
+     "jobId": "{{jobId}}",
+     "scenarioId": "{{scenarioId}}",
+     "scenarioName": "{{scenarioName}}",
+     "timestamp": "{{now}}"
+   }
+   ```
+
+3. **Important Notes:**
+   - **Idempotency Key:** Must be unique per event to prevent duplicate counting if Make.com retries. Use a combination of `jobId + chunkIndex` or a UUID.
+   - **Customer ID:** Should match the tenant ID in your database.
+   - **Pages & Rows:** Must be non-negative integers.
+   - The API automatically aggregates totals by customer and day, so you can call it multiple times per job.
+
+### Testing Document Usage
+
+Run the test script:
+```bash
+cd apps/api
+npx tsx test_document_usage.ts
+```
+
+### Query Document Usage
+
+**Example cURL:**
+```bash
+curl "http://localhost:5000/api/usage/document?customerId=c_123&from=2026-02-01&to=2026-02-16" \
+  -H "X-API-Key: your-api-key"
+```
+
+**Response:**
+```json
+{
+  "customerId": "c_123",
+  "from": "2026-02-01",
+  "to": "2026-02-16",
+  "days": [
+    { "date": "2026-02-16", "pagesSpent": 500, "rowsUsed": 1200 }
+  ],
+  "totals": { "pagesSpent": 1234, "rowsUsed": 5678 }
+}
+```
 
 ## Next Steps
 
-1. Configure Make.com to POST to `/v1/events/ingest`
+1. Configure Make.com to POST to `/api/usage/document`
 2. Set up Stripe for billing
 3. Configure Azure Blob for ticket attachments

@@ -10,7 +10,14 @@
       "Bash(git -C \"C:\\\\Users\\\\Bozhidar\\\\.claude-worktrees\\\\Acctos AI\\\\modest-cannon\" worktree list)",
       "Bash(copy:*)",
       "Bash(npx prisma:*)",
-      "Bash(npx tsc:*)"
+      "Bash(npx tsc:*)",
+      "Bash(npm run db:push:*)",
+      "Bash(npx tsx:*)",
+      "Bash(pkill:*)",
+      "Bash(netstat:*)",
+      "Bash(tasklist:*)",
+      "Bash(taskkill:*)",
+      "Bash(curl:*)"
     ]
   }
 }
