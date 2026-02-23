@@ -99,6 +99,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     const login = async (email: string, password: string) => {
         const response = await axios.post('/api/auth/login', { email, password });
+        axios.defaults.headers.common['Authorization'] = `Bearer ${response.data.token}`;
         setToken(response.data.token);
         setUser({
             id: response.data.user.id,
@@ -119,6 +120,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     };
 
     const logout = () => {
+        delete axios.defaults.headers.common['Authorization'];
         setToken(null);
         setUser(null);
         setTenants([]);
@@ -128,6 +130,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     const switchTenant = async (tenantId: string) => {
         const response = await axios.post('/api/auth/switch-tenant', { tenantId });
+        axios.defaults.headers.common['Authorization'] = `Bearer ${response.data.token}`;
         setToken(response.data.token);
         setActiveTenant(response.data.tenant);
         setCurrentRole(response.data.tenant.role);

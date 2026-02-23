@@ -235,6 +235,47 @@ export default function Users() {
                     </div>
                 </div>
             )}
+            <style>{`
+        .btn-primary {
+          display: inline-flex;
+          align-items: center;
+          gap: 0.5rem;
+          padding: 0.6rem 1.25rem;
+          background: linear-gradient(135deg, var(--primary), var(--secondary));
+          border: none;
+          border-radius: 0.75rem;
+          color: white;
+          font-weight: 600;
+          font-size: 0.9rem;
+          cursor: pointer;
+          transition: opacity 0.2s;
+        }
+        .btn-primary:hover {
+          opacity: 0.9;
+        }
+        .btn-primary:disabled {
+          opacity: 0.6;
+          cursor: not-allowed;
+        }
+        .btn-secondary {
+          display: inline-flex;
+          align-items: center;
+          gap: 0.5rem;
+          padding: 0.6rem 1.25rem;
+          background: var(--surface);
+          border: 1px solid var(--glass-border);
+          border-radius: 0.75rem;
+          color: var(--text);
+          font-weight: 600;
+          font-size: 0.9rem;
+          cursor: pointer;
+          transition: border-color 0.2s;
+        }
+        .btn-secondary:hover {
+          border-color: var(--primary);
+          color: var(--primary);
+        }
+      `}</style>
         </div>
     );
 }
