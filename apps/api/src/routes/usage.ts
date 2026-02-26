@@ -261,4 +261,83 @@ router.get('/document-usage', async (req: AuthenticatedRequest, res: Response, n
     }
 });
 
+/**
+ * GET /v1/usage/openai-costs
+ *
+ * Fetches real token usage directly from the OpenAI API for the requested
+ * period and converts it to EUR using GPT-4o pricing.
+ *
+ * Pricing applied (GPT-4o):
+ *   Input  tokens : $2.50  / 1M
+ *   Output tokens : $10.00 / 1M
+ *   USD → EUR     : fixed rate 0.93
+ */
+router.get('/openai-costs', requireRole(...ADMIN_ROLES), async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+    try {
+        const apiKey = process.env.OPENAI_API_KEY;
+
+        if (!apiKey) {
+            return res.json({
+                inputTokens: 0, outputTokens: 0, totalTokens: 0,
+                costUsd: '0.0000', costEur: '0.00',
+                error: 'OPENAI_API_KEY not configured',
+            });
+        }
+
+        const days = Math.min(parseInt((req.query.days as string) || '30'), 90);
+
+        // Build list of YYYY-MM-DD strings to query (today → N days ago)
+        const dates: string[] = [];
+        for (let i = 0; i < days; i++) {
+            const d = new Date();
+            d.setDate(d.getDate() - i);
+            dates.push(d.toISOString().split('T')[0]);
+        }
+
+        // Fetch each day in small parallel batches
+        const BATCH = 5;
+        let inputTokens = 0;
+        let outputTokens = 0;
+
+        for (let i = 0; i < dates.length; i += BATCH) {
+            const batch = dates.slice(i, i + BATCH);
+            const results = await Promise.all(
+                batch.map(date =>
+                    fetch(`https://api.openai.com/v1/usage?date=${date}`, {
+                        headers: { Authorization: `Bearer ${apiKey}` },
+                    })
+                        .then(r => r.json() as Promise<any>)
+                        .catch(() => null)
+                )
+            );
+
+            for (const data of results) {
+                if (!Array.isArray(data?.data)) continue;
+                for (const entry of data.data) {
+                    inputTokens  += entry.n_context_tokens_total   ?? 0;
+                    outputTokens += entry.n_generated_tokens_total ?? 0;
+                }
+            }
+        }
+
+        // GPT-4o pricing (USD per token)
+        const INPUT_RATE  = 2.50  / 1_000_000;
+        const OUTPUT_RATE = 10.00 / 1_000_000;
+        const EUR_RATE    = 0.93;
+
+        const costUsd = inputTokens * INPUT_RATE + outputTokens * OUTPUT_RATE;
+        const costEur = costUsd * EUR_RATE;
+
+        res.json({
+            inputTokens,
+            outputTokens,
+            totalTokens: inputTokens + outputTokens,
+            costUsd: costUsd.toFixed(4),
+            costEur: costEur.toFixed(2),
+        });
+    } catch (error) {
+        next(error);
+    }
+});
+
 export { router as usageRouter };

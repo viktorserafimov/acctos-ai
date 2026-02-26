@@ -46,6 +46,8 @@ export default function Dashboard() {
     const [summary, setSummary] = useState<UsageSummary | null>(null);
     const [timeseries, setTimeseries] = useState<TimeseriesPoint[]>([]);
     const [documentUsage, setDocumentUsage] = useState<DocumentUsageData | null>(null);
+    type OpenAICostData = { inputTokens: number; outputTokens: number; totalTokens: number; costEur: string };
+    const [openaiCostsMap, setOpenaiCostsMap] = useState<Record<string, OpenAICostData>>({});
     const [loading, setLoading] = useState(true);
     const [period, setPeriod] = useState('30d');
 
@@ -58,26 +60,60 @@ export default function Dashboard() {
     const [azureEndpoint, setAzureEndpoint] = useState('');
     const [testingConnection, setTestingConnection] = useState(false);
     const [connectionStatus, setConnectionStatus] = useState<{ success: boolean; message: string } | null>(null);
+    const [testingAzureConnection, setTestingAzureConnection] = useState(false);
+    const [azureConnectionStatus, setAzureConnectionStatus] = useState<{ success: boolean; message: string } | null>(null);
     const [activeTab, setActiveTab] = useState<'infrastructure' | 'document'>(isAdmin ? 'infrastructure' : 'document');
     const [syncCooldown, setSyncCooldown] = useState(false);
+    const [scenarioActionLoading, setScenarioActionLoading] = useState(false);
+    const [scenarioActionError, setScenarioActionError] = useState<string | null>(null);
+    const [resettingUsage, setResettingUsage] = useState(false);
+
+    // Usage limits (for Document Usage tab)
+    const [usageLimits, setUsageLimits] = useState<{
+        pagesLimit: number; rowsLimit: number;
+        addonPagesLimit: number; addonRowsLimit: number;
+        addonPagesUsed: number; addonRowsUsed: number;
+        scenariosPaused: boolean;
+    } | null>(null);
 
     // 2. Helper Functions
     const fetchData = async () => {
         setLoading(true);
         try {
             console.log('Fetching dashboard data for period:', period);
-            const [summaryRes, timeseriesRes] = await Promise.all([
+            const days = period.replace('d', '');
+            const [summaryRes, timeseriesRes] = await Promise.allSettled([
                 axios.get(`/v1/usage/summary?period=${period}`),
-                axios.get(`/v1/usage/timeseries?days=${period.replace('d', '')}`),
+                axios.get(`/v1/usage/timeseries?days=${days}`),
             ]);
-            console.log('Dashboard data received:', { summary: summaryRes.data, timeseries: timeseriesRes.data });
-            setSummary(summaryRes.data);
-            setTimeseries(timeseriesRes.data.data);
+            if (summaryRes.status === 'fulfilled') {
+                console.log('Dashboard data received:', summaryRes.value.data);
+                setSummary(summaryRes.value.data);
+            }
+            if (timeseriesRes.status === 'fulfilled') {
+                setTimeseries(timeseriesRes.value.data.data);
+            }
         } catch (error) {
             console.error('Failed to fetch usage data:', error);
         } finally {
             setLoading(false);
         }
+    };
+
+    // Fetches OpenAI token costs for both supported periods in one go.
+    // Runs once on mount (and on manual sync) so switching the period filter
+    // is instant — no extra API calls needed.
+    const fetchOpenAICosts = async () => {
+        const [res7, res30] = await Promise.allSettled([
+            axios.get('/v1/usage/openai-costs?days=7'),
+            axios.get('/v1/usage/openai-costs?days=30'),
+        ]);
+        setOpenaiCostsMap(prev => {
+            const next = { ...prev };
+            if (res7.status  === 'fulfilled') next['7']  = res7.value.data;
+            if (res30.status === 'fulfilled') next['30'] = res30.value.data;
+            return next;
+        });
     };
 
     const fetchDocumentUsage = async () => {
@@ -94,13 +130,27 @@ export default function Dashboard() {
             const from = fromDate.toISOString().split('T')[0];
             const to = toDate.toISOString().split('T')[0];
 
-            // Use JWT-authenticated endpoint (no API key needed)
-            const response = await axios.get('/v1/usage/document-usage', {
-                params: { from, to }
-            });
+            const [docRes, limitsRes] = await Promise.allSettled([
+                axios.get('/v1/usage/document-usage', { params: { from, to } }),
+                axios.get('/v1/billing/usage-status'),
+            ]);
 
-            console.log('Document usage data received:', response.data);
-            setDocumentUsage(response.data);
+            if (docRes.status === 'fulfilled') {
+                console.log('Document usage data received:', docRes.value.data);
+                setDocumentUsage(docRes.value.data);
+            }
+            if (limitsRes.status === 'fulfilled') {
+                const d = limitsRes.value.data;
+                setUsageLimits({
+                    pagesLimit: d.pagesLimit,
+                    rowsLimit: d.rowsLimit,
+                    addonPagesLimit: d.addonPagesLimit,
+                    addonRowsLimit: d.addonRowsLimit,
+                    addonPagesUsed: d.addonPagesUsed,
+                    addonRowsUsed: d.addonRowsUsed,
+                    scenariosPaused: d.scenariosPaused,
+                });
+            }
         } catch (error) {
             console.error('Failed to fetch document usage data:', error);
         } finally {
@@ -119,15 +169,66 @@ export default function Dashboard() {
             if (activeTab === 'document') {
                 await fetchDocumentUsage();
             } else {
-                // Trigger backend sync
+                // Trigger backend sync then refresh all data including OpenAI costs
                 await axios.post('/v1/integrations/make/sync');
-                // Then refresh data
-                await fetchData();
+                await Promise.all([fetchData(), fetchOpenAICosts()]);
             }
         } catch (error) {
             console.error('Sync failed:', error);
             setLoading(false);
             alert('Failed to sync data');
+        }
+    };
+
+    const handlePauseScenarios = async () => {
+        setScenarioActionLoading(true);
+        setScenarioActionError(null);
+        try {
+            const res = await axios.post('/v1/integrations/make/pause-all');
+            if (res.data.scenariosPaused === 0 && res.data.scenariosFailed > 0) {
+                setScenarioActionError(
+                    `Pause failed: all ${res.data.scenariosFailed} scenario(s) returned an error from Make.com. Check the server logs for details.`
+                );
+            }
+            await fetchDocumentUsage();
+        } catch {
+            setScenarioActionError('Pause failed: could not reach the server. Check your Make.com API key.');
+        } finally {
+            setScenarioActionLoading(false);
+        }
+    };
+
+    const handleResumeScenarios = async () => {
+        setScenarioActionLoading(true);
+        setScenarioActionError(null);
+        try {
+            const res = await axios.post('/v1/integrations/make/resume-all');
+            if (res.data.scenariosResumed === 0 && res.data.scenariosFailed > 0) {
+                setScenarioActionError(
+                    `Resume failed: all ${res.data.scenariosFailed} scenario(s) returned an error from Make.com. Check the server logs for details.`
+                );
+            }
+            await fetchDocumentUsage();
+        } catch {
+            setScenarioActionError('Resume failed: could not reach the server. Check your Make.com API key.');
+        } finally {
+            setScenarioActionLoading(false);
+        }
+    };
+
+    const handleResetUsage = async () => {
+        if (!window.confirm(
+            'This will permanently delete ALL pages and rows usage data, resetting both counters to 0 everywhere.\n\nMake.com, Azure, and OpenAI usage data will NOT be affected.\n\nContinue?'
+        )) return;
+        setResettingUsage(true);
+        try {
+            await axios.post('/v1/billing/reset-usage');
+            // Refresh both tabs so all views show 0
+            await Promise.all([fetchDocumentUsage(), fetchData()]);
+        } catch {
+            alert('Reset failed. Make sure you have admin privileges.');
+        } finally {
+            setResettingUsage(false);
         }
     };
 
@@ -148,6 +249,28 @@ export default function Dashboard() {
         } catch (error) {
             alert('Failed to save settings.');
             console.error(error);
+        }
+    };
+
+    const testAzureConnection = async () => {
+        setTestingAzureConnection(true);
+        setAzureConnectionStatus(null);
+        try {
+            if (azureApiKey || azureEndpoint) {
+                await axios.post('/api/auth/profile', { azureApiKey: azureApiKey || undefined, azureEndpoint: azureEndpoint || undefined });
+            }
+            const res = await axios.get('/v1/integrations/azure/check');
+            setAzureConnectionStatus({
+                success: true,
+                message: `Connected! ${res.data.modelsAvailable} model(s) available.`,
+            });
+        } catch (error: any) {
+            setAzureConnectionStatus({
+                success: false,
+                message: error.response?.data?.error?.message || 'Connection failed',
+            });
+        } finally {
+            setTestingAzureConnection(false);
         }
     };
 
@@ -201,6 +324,9 @@ export default function Dashboard() {
         }
     }, [period, activeTab]);
 
+    // Fetch OpenAI costs for both periods once on mount
+    useEffect(() => { fetchOpenAICosts(); }, []);
+
     // Fetch integration config when settings open
     useEffect(() => {
         if (showSettings) {
@@ -230,11 +356,19 @@ export default function Dashboard() {
         'OpenAI': point.openai.cost,
     }));
 
-    // Calculate EUR-only total (Azure + OpenAI, excluding Make.com credits)
-    const azureCost = parseFloat(summary?.summary?.azure?.totalCost || '0');
-    const openaiCost = parseFloat(summary?.summary?.openai?.totalCost || '0');
-    const eurTotal = (azureCost + openaiCost).toFixed(4);
-    const eurEvents = (summary?.summary?.azure?.eventCount || 0) + (summary?.summary?.openai?.eventCount || 0);
+    // Pricing calculations
+    // Make.com: 1.06 EUR per 1,000 credits
+    const makeCredits = parseFloat(summary?.summary?.make?.totalCost || '0');
+    const makeEurCost = makeCredits * 1.06 / 1000;
+    // Azure OCR: 1.50 EUR per 1,000 pages (each event = 1 page)
+    const azurePages = summary?.summary?.azure?.eventCount || 0;
+    const azureEurCost = azurePages * 1.50 / 1000;
+    // OpenAI: real cost fetched directly from OpenAI API (GPT-4o pricing, converted to EUR)
+    const openaiCosts = openaiCostsMap[period.replace('d', '')] ?? null;
+    const openaiCost = parseFloat(openaiCosts?.costEur || '0');
+    // Total across all sources
+    const eurTotal = (makeEurCost + azureEurCost + openaiCost).toFixed(2);
+    const totalEvents = (summary?.summary?.make?.eventCount || 0) + azurePages + (summary?.summary?.openai?.eventCount || 0);
 
     // 5. Render
     if (loading && !summary) {
@@ -265,7 +399,6 @@ export default function Dashboard() {
                     >
                         <option value="7d">Last 7 days</option>
                         <option value="30d">Last 30 days</option>
-                        <option value="90d">Last 90 days</option>
                     </select>
                     <button className="btn-secondary" onClick={handleExport}>
                         <Download size={16} />
@@ -302,6 +435,52 @@ export default function Dashboard() {
 
             {isAdmin && activeTab === 'infrastructure' ? (
                 <>
+                    {/* Make.com scenario controls */}
+                    <div className="scenario-controls">
+                        <div className="scenario-status">
+                            <span
+                                className="scenario-status-dot"
+                                style={{ background: usageLimits?.scenariosPaused ? '#ef4444' : '#10b981' }}
+                            />
+                            <span style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>
+                                Scenarios: <strong style={{ color: 'var(--text)' }}>
+                                    {usageLimits?.scenariosPaused ? 'Paused' : 'Running'}
+                                </strong>
+                            </span>
+                        </div>
+                        <div style={{ display: 'flex', gap: '0.75rem' }}>
+                            <button
+                                className="sc-btn sc-btn-pause"
+                                onClick={handlePauseScenarios}
+                                disabled={scenarioActionLoading || usageLimits?.scenariosPaused === true}
+                            >
+                                {scenarioActionLoading ? 'Working…' : 'Pause Scenarios'}
+                            </button>
+                            <button
+                                className="sc-btn sc-btn-resume"
+                                onClick={handleResumeScenarios}
+                                disabled={scenarioActionLoading || usageLimits?.scenariosPaused === false}
+                            >
+                                {scenarioActionLoading ? 'Working…' : 'Resume Scenarios'}
+                            </button>
+                            <button
+                                className="sc-btn sc-btn-reset"
+                                onClick={handleResetUsage}
+                                disabled={resettingUsage}
+                            >
+                                {resettingUsage ? 'Resetting…' : 'Reset Pages & Rows'}
+                            </button>
+                        </div>
+                    </div>
+
+                    {/* Scenario action error */}
+                    {scenarioActionError && (
+                        <div className="sc-error-banner">
+                            <span>⚠ {scenarioActionError}</span>
+                            <button className="sc-error-dismiss" onClick={() => setScenarioActionError(null)}>✕</button>
+                        </div>
+                    )}
+
                     {/* Stats Grid */}
                     <div className="stats-grid">
                         <div className="card">
@@ -317,6 +496,10 @@ export default function Dashboard() {
                                 <Zap size={18} />
                                 <span>{summary?.summary?.make?.eventCount || 0} operations</span>
                             </div>
+                            <div className="cost-display" style={{ marginTop: '0.25rem' }}>
+                                <Euro size={18} />
+                                <span>{makeEurCost.toFixed(2)} EUR</span>
+                            </div>
                         </div>
 
                         <div className="card">
@@ -330,7 +513,7 @@ export default function Dashboard() {
                             </div>
                             <div className="cost-display">
                                 <Euro size={18} />
-                                <span>{summary?.summary?.azure?.totalCost || '0.00'} EUR</span>
+                                <span>{azureEurCost.toFixed(2)} EUR</span>
                             </div>
                         </div>
 
@@ -340,12 +523,16 @@ export default function Dashboard() {
                                 <Brain size={20} color="#10b981" />
                             </div>
                             <div className="usage-value">
-                                {summary?.summary?.openai?.totalTokens || 0}
+                                {(openaiCosts?.totalTokens ?? 0).toLocaleString()}
                                 <span className="usage-unit">tokens</span>
                             </div>
-                            <div className="cost-display">
+                            <div className="cost-display" style={{ marginTop: '0.5rem' }}>
                                 <Euro size={18} />
-                                <span>{summary?.summary?.openai?.totalCost || '0.00'} EUR</span>
+                                <span>{openaiCosts?.costEur ?? '0.00'} EUR</span>
+                            </div>
+                            <div className="cost-display" style={{ marginTop: '0.25rem', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                                <span>↑ {(openaiCosts?.inputTokens ?? 0).toLocaleString()} in</span>
+                                <span style={{ marginLeft: '0.5rem' }}>↓ {(openaiCosts?.outputTokens ?? 0).toLocaleString()} out</span>
                             </div>
                         </div>
 
@@ -359,7 +546,7 @@ export default function Dashboard() {
                                 <span className="usage-unit">EUR</span>
                             </div>
                             <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', marginTop: '1rem' }}>
-                                {eurEvents} Azure + OpenAI events in {period}
+                                {totalEvents} total events across all sources in {period}
                             </p>
                         </div>
                     </div>
@@ -391,32 +578,101 @@ export default function Dashboard() {
                 </>
             ) : (
                 <>
+                    {/* Paused notice */}
+                    {usageLimits?.scenariosPaused && (
+                        <div style={{
+                            display: 'flex', alignItems: 'center', gap: '0.75rem',
+                            padding: '1rem 1.25rem',
+                            background: 'rgba(239,68,68,0.1)',
+                            border: '1px solid rgba(239,68,68,0.3)',
+                            borderRadius: '1rem', color: '#ef4444',
+                            marginBottom: '1.5rem', fontSize: '0.9rem'
+                        }}>
+                            <TrendingUp size={18} />
+                            <span><strong>Agent Paused</strong> — usage limit reached. Go to the Billing tab to resume or purchase add-ons.</span>
+                        </div>
+                    )}
+
                     <div className="stats-grid">
+                        {/* Pages card */}
                         <div className="card">
                             <div className="card-title">
                                 <h3>Pages Spent</h3>
                                 <FileText size={20} color="#6366f1" />
                             </div>
-                            <div className="usage-value">
-                                {documentUsage?.totals.pagesSpent.toLocaleString() || 0}
-                                <span className="usage-unit">pages</span>
+                            <div className="doc-usage-row">
+                                <span className="doc-usage-current">{(documentUsage?.totals.pagesSpent || 0).toLocaleString()}</span>
+                                <span className="doc-usage-sep">/</span>
+                                <span className="doc-usage-limit">{(usageLimits?.pagesLimit ?? 5000).toLocaleString()}</span>
                             </div>
-                            <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', marginTop: '1rem' }}>
-                                Total number of pages processed in {period}
+                            <div className="doc-quota-bar">
+                                <div
+                                    className="doc-quota-fill"
+                                    style={{
+                                        width: `${Math.min(100, ((documentUsage?.totals.pagesSpent || 0) / (usageLimits?.pagesLimit ?? 5000)) * 100)}%`,
+                                        background: (documentUsage?.totals.pagesSpent || 0) >= (usageLimits?.pagesLimit ?? 5000) ? '#ef4444' : undefined,
+                                    }}
+                                />
+                            </div>
+                            {usageLimits && usageLimits.addonPagesLimit > 0 && (
+                                <div style={{ marginTop: '0.75rem' }}>
+                                    <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginBottom: '0.3rem' }}>
+                                        Extra pages (add-on): {usageLimits.addonPagesUsed.toLocaleString()} / {usageLimits.addonPagesLimit.toLocaleString()}
+                                    </p>
+                                    <div className="doc-quota-bar">
+                                        <div
+                                            className="doc-quota-fill doc-quota-fill--addon"
+                                            style={{
+                                                width: `${Math.min(100, (usageLimits.addonPagesUsed / usageLimits.addonPagesLimit) * 100)}%`,
+                                                background: usageLimits.addonPagesUsed >= usageLimits.addonPagesLimit ? '#ef4444' : undefined,
+                                            }}
+                                        />
+                                    </div>
+                                </div>
+                            )}
+                            <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginTop: '0.75rem' }}>
+                                Pages processed in {period}
                             </p>
                         </div>
 
+                        {/* Rows card */}
                         <div className="card">
                             <div className="card-title">
                                 <h3>Rows Used</h3>
                                 <TrendingUp size={20} color="#ec4899" />
                             </div>
-                            <div className="usage-value">
-                                {documentUsage?.totals.rowsUsed.toLocaleString() || 0}
-                                <span className="usage-unit">rows</span>
+                            <div className="doc-usage-row">
+                                <span className="doc-usage-current">{(documentUsage?.totals.rowsUsed || 0).toLocaleString()}</span>
+                                <span className="doc-usage-sep">/</span>
+                                <span className="doc-usage-limit">{(usageLimits?.rowsLimit ?? 5000).toLocaleString()}</span>
                             </div>
-                            <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', marginTop: '1rem' }}>
-                                Total number of data rows extracted in {period}
+                            <div className="doc-quota-bar">
+                                <div
+                                    className="doc-quota-fill"
+                                    style={{
+                                        width: `${Math.min(100, ((documentUsage?.totals.rowsUsed || 0) / (usageLimits?.rowsLimit ?? 5000)) * 100)}%`,
+                                        background: (documentUsage?.totals.rowsUsed || 0) >= (usageLimits?.rowsLimit ?? 5000) ? '#ef4444' : undefined,
+                                    }}
+                                />
+                            </div>
+                            {usageLimits && usageLimits.addonRowsLimit > 0 && (
+                                <div style={{ marginTop: '0.75rem' }}>
+                                    <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginBottom: '0.3rem' }}>
+                                        Extra rows (add-on): {usageLimits.addonRowsUsed.toLocaleString()} / {usageLimits.addonRowsLimit.toLocaleString()}
+                                    </p>
+                                    <div className="doc-quota-bar">
+                                        <div
+                                            className="doc-quota-fill doc-quota-fill--addon"
+                                            style={{
+                                                width: `${Math.min(100, (usageLimits.addonRowsUsed / usageLimits.addonRowsLimit) * 100)}%`,
+                                                background: usageLimits.addonRowsUsed >= usageLimits.addonRowsLimit ? '#ef4444' : undefined,
+                                            }}
+                                        />
+                                    </div>
+                                </div>
+                            )}
+                            <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginTop: '0.75rem' }}>
+                                Data rows extracted in {period}
                             </p>
                         </div>
                     </div>
@@ -533,6 +789,29 @@ export default function Dashboard() {
                                 onChange={(e) => setAzureEndpoint(e.target.value)}
                             />
 
+                            <button
+                                type="button"
+                                onClick={testAzureConnection}
+                                disabled={testingAzureConnection}
+                                className="btn-secondary"
+                                style={{ marginTop: '0.75rem', marginBottom: '1rem' }}
+                            >
+                                {testingAzureConnection ? 'Testing...' : 'Test Azure Connection'}
+                            </button>
+
+                            {azureConnectionStatus && (
+                                <div style={{
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: '0.5rem',
+                                    marginBottom: '1rem',
+                                    color: azureConnectionStatus.success ? '#10b981' : '#ef4444'
+                                }}>
+                                    {azureConnectionStatus.success ? <CheckCircle size={16} /> : <AlertCircle size={16} />}
+                                    <span style={{ fontSize: '0.85rem' }}>{azureConnectionStatus.message}</span>
+                                </div>
+                            )}
+
                             <button type="submit" className="btn-primary" style={{ marginTop: '1.5rem', width: '100%' }}>
                                 Save Settings
                             </button>
@@ -603,6 +882,82 @@ export default function Dashboard() {
           color: white;
           box-shadow: 0 4px 12px rgba(99, 102, 241, 0.3);
         }
+        .scenario-controls {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          padding: 0.85rem 1.25rem;
+          background: var(--surface);
+          border: 1px solid var(--glass-border);
+          border-radius: 1rem;
+          margin-bottom: 1.5rem;
+        }
+        .scenario-status {
+          display: flex;
+          align-items: center;
+          gap: 0.6rem;
+        }
+        .scenario-status-dot {
+          width: 10px;
+          height: 10px;
+          border-radius: 50%;
+          flex-shrink: 0;
+        }
+        .sc-btn {
+          display: flex;
+          align-items: center;
+          gap: 0.4rem;
+          padding: 0.45rem 1rem;
+          border: none;
+          border-radius: 0.65rem;
+          font-size: 0.85rem;
+          font-weight: 600;
+          cursor: pointer;
+          transition: opacity 0.2s;
+        }
+        .sc-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+        .sc-btn-pause {
+          background: rgba(239, 68, 68, 0.15);
+          color: #ef4444;
+          border: 1px solid rgba(239, 68, 68, 0.3);
+        }
+        .sc-btn-pause:not(:disabled):hover { background: rgba(239, 68, 68, 0.25); }
+        .sc-btn-resume {
+          background: rgba(16, 185, 129, 0.15);
+          color: #10b981;
+          border: 1px solid rgba(16, 185, 129, 0.3);
+        }
+        .sc-btn-resume:not(:disabled):hover { background: rgba(16, 185, 129, 0.25); }
+        .sc-btn-reset {
+          background: rgba(99, 102, 241, 0.12);
+          color: var(--primary);
+          border: 1px solid rgba(99, 102, 241, 0.3);
+        }
+        .sc-btn-reset:not(:disabled):hover { background: rgba(99, 102, 241, 0.22); }
+        .sc-error-banner {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 1rem;
+          padding: 0.75rem 1.25rem;
+          background: rgba(239, 68, 68, 0.1);
+          border: 1px solid rgba(239, 68, 68, 0.35);
+          border-radius: 0.75rem;
+          color: #ef4444;
+          font-size: 0.875rem;
+          margin-bottom: 1rem;
+        }
+        .sc-error-dismiss {
+          background: none;
+          border: none;
+          color: #ef4444;
+          cursor: pointer;
+          font-size: 1rem;
+          padding: 0;
+          flex-shrink: 0;
+          opacity: 0.7;
+        }
+        .sc-error-dismiss:hover { opacity: 1; }
         .stats-grid {
           display: grid;
           grid-template-columns: repeat(4, 1fr);
@@ -709,6 +1064,43 @@ export default function Dashboard() {
         }
         .btn-primary:hover {
           opacity: 0.9;
+        }
+        .doc-usage-row {
+          display: flex;
+          align-items: baseline;
+          gap: 0.4rem;
+          margin-bottom: 0.5rem;
+        }
+        .doc-usage-current {
+          font-size: 2.5rem;
+          font-weight: 700;
+          line-height: 1;
+        }
+        .doc-usage-sep {
+          font-size: 1.5rem;
+          font-weight: 400;
+          color: var(--text-muted);
+        }
+        .doc-usage-limit {
+          font-size: 1.5rem;
+          font-weight: 600;
+          color: var(--text-muted);
+        }
+        .doc-quota-bar {
+          height: 6px;
+          background: rgba(255, 255, 255, 0.08);
+          border-radius: 3px;
+          overflow: hidden;
+          margin-top: 0.5rem;
+        }
+        .doc-quota-fill {
+          height: 100%;
+          background: linear-gradient(90deg, var(--primary), var(--secondary));
+          border-radius: 3px;
+          transition: width 0.4s ease;
+        }
+        .doc-quota-fill--addon {
+          background: linear-gradient(90deg, #f59e0b, #ec4899);
         }
       `}</style>
         </div>

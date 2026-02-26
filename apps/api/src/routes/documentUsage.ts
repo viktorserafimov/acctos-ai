@@ -5,6 +5,7 @@ import { PrismaClient } from '@prisma/client';
 import { PrismaClientKnownRequestError } from '@prisma/client/runtime/library';
 import { verifyApiKey } from '../middleware/apiKey.js';
 import { createError } from '../middleware/errorHandler.js';
+import { checkAndPauseIfNeeded } from '../utils/usageLimits.js';
 
 const router = Router();
 
@@ -90,6 +91,11 @@ router.post(
                         eventCount: { increment: 1 },
                     },
                 });
+
+                // Fire-and-forget limit check — pauses Make.com scenarios if limits exceeded
+                checkAndPauseIfNeeded(prisma, data.customerId).catch((e) =>
+                    console.error('[documentUsage] Limit check failed:', e)
+                );
 
                 res.status(201).json({
                     status: 'created',

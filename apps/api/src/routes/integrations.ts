@@ -3,6 +3,7 @@ import axios from 'axios';
 import { authenticateToken, AuthenticatedRequest } from '../middleware/auth.js';
 import { createError } from '../middleware/errorHandler.js';
 import { PrismaClient } from '@prisma/client';
+import { checkAndPauseIfNeeded, pauseAllScenarios, resumeAllScenarios } from '../utils/usageLimits.js';
 
 const router = Router();
 
@@ -284,6 +285,9 @@ router.post('/make/sync', async (req: AuthenticatedRequest, res: Response, next:
 
         console.log(`[Make Sync] Complete. ${scenarios.length} scenarios, ${datesToUpdate.length} days, ${totalCredits} credits, ${totalOps} operations`);
 
+        // Check usage limits after sync and pause scenarios if exceeded
+        const newlyPaused = await checkAndPauseIfNeeded(prisma, tenantId);
+
         res.json({
             status: 'success',
             scenariosProcessed: scenarios.length,
@@ -291,6 +295,7 @@ router.post('/make/sync', async (req: AuthenticatedRequest, res: Response, next:
             totalCredits,
             totalOperations: totalOps,
             folderFiltered: !!tenant.makeFolderId,
+            scenariosPaused: newlyPaused,
         });
 
     } catch (error: any) {
@@ -299,6 +304,142 @@ router.post('/make/sync', async (req: AuthenticatedRequest, res: Response, next:
             return next(createError('Unauthorized. Check API Key.', 401, 'INVALID_KEY'));
         }
         next(createError('Sync failed.', 500, 'SYNC_FAILED'));
+    }
+});
+
+/**
+ * GET /v1/integrations/azure/check
+ *
+ * Verifies the connection to Azure Document Intelligence using the stored
+ * API key and endpoint by calling the Document Models list endpoint.
+ */
+router.get('/azure/check', async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+    try {
+        const prisma: PrismaClient = req.app.locals.prisma;
+        const tenantId = req.user!.tenantId;
+
+        if (!tenantId) {
+            return next(createError('No tenant selected', 400, 'NO_TENANT'));
+        }
+
+        const tenant = await (prisma.tenant as any).findUnique({
+            where: { id: tenantId },
+            select: { azureApiKey: true, azureEndpoint: true },
+        });
+
+        if (!tenant?.azureApiKey || !tenant?.azureEndpoint) {
+            return next(createError(
+                'Azure credentials not configured. Please add your API key and endpoint in Settings.',
+                400,
+                'NO_CREDENTIALS'
+            ));
+        }
+
+        const endpoint = tenant.azureEndpoint.replace(/\/$/, '');
+
+        console.log('[Azure Check] Testing connectivity to:', endpoint);
+
+        const response = await axios.get(
+            `${endpoint}/documentintelligence/documentModels?api-version=2024-11-30`,
+            {
+                headers: { 'Ocp-Apim-Subscription-Key': tenant.azureApiKey },
+                timeout: 8000,
+            }
+        );
+
+        const modelCount = response.data?.value?.length ?? 0;
+        console.log('[Azure Check] Connected. Models available:', modelCount);
+
+        res.json({
+            status: 'connected',
+            endpoint,
+            modelsAvailable: modelCount,
+        });
+
+    } catch (error: any) {
+        console.error('[Azure Check] Failed:', {
+            message: error.message,
+            status: error.response?.status,
+            data: error.response?.data,
+        });
+
+        if (error.response?.status === 401 || error.response?.status === 403) {
+            return next(createError(
+                'Invalid API key or unauthorized. Please check your Azure credentials.',
+                401,
+                'INVALID_KEY'
+            ));
+        }
+
+        if (error.response?.status === 404) {
+            return next(createError(
+                'Endpoint not found. Please verify your Azure endpoint URL.',
+                400,
+                'INVALID_ENDPOINT'
+            ));
+        }
+
+        next(createError(
+            `Connection failed: ${error.response?.data?.error?.message || error.message}`,
+            502,
+            'CONNECTION_FAILED'
+        ));
+    }
+});
+
+/**
+ * POST /v1/integrations/make/pause-all
+ *
+ * Manually pauses every Make.com scenario in the configured folder/org.
+ * Also sets the scenariosPaused flag on the tenant.
+ */
+router.post('/make/pause-all', async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+    try {
+        const prisma: PrismaClient = req.app.locals.prisma;
+        const tenantId = req.user!.tenantId;
+
+        if (!tenantId) {
+            return next(createError('No tenant selected', 400, 'NO_TENANT'));
+        }
+
+        const result = await pauseAllScenarios(prisma, tenantId);
+
+        res.json({
+            status: 'paused',
+            scenariosPaused: result.paused,
+            scenariosFailed: result.failed,
+        });
+    } catch (error: any) {
+        console.error('[Make Pause All]', error);
+        next(createError('Failed to pause scenarios.', 500, 'PAUSE_FAILED'));
+    }
+});
+
+/**
+ * POST /v1/integrations/make/resume-all
+ *
+ * Manually resumes every Make.com scenario in the configured folder/org.
+ * Also clears the scenariosPaused flag on the tenant.
+ */
+router.post('/make/resume-all', async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+    try {
+        const prisma: PrismaClient = req.app.locals.prisma;
+        const tenantId = req.user!.tenantId;
+
+        if (!tenantId) {
+            return next(createError('No tenant selected', 400, 'NO_TENANT'));
+        }
+
+        const result = await resumeAllScenarios(prisma, tenantId);
+
+        res.json({
+            status: 'resumed',
+            scenariosResumed: result.resumed,
+            scenariosFailed: result.failed,
+        });
+    } catch (error: any) {
+        console.error('[Make Resume All]', error);
+        next(createError('Failed to resume scenarios.', 500, 'RESUME_FAILED'));
     }
 });
 

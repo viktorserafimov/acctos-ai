@@ -6,6 +6,7 @@ const ISSUE_OPTIONS = [
     { value: 'system_not_working', label: 'System not working' },
     { value: 'files_issues', label: 'Files issues - missing files, incorrect data, etc.' },
     { value: 'general_support', label: 'General support' },
+    { value: 'downgrade_cancel', label: 'Downgrade/Cancel subscription' },
 ];
 
 const WEBHOOK_URL = 'https://hook.eu2.make.com/gjavitgyfytqz3qmg97qz3lzp59p1a1q';
@@ -81,12 +82,9 @@ export default function Tickets() {
                     </div>
                 ) : (
                     <form onSubmit={handleSubmit}>
-                        <div className="form-section-icon">
-                            <HelpCircle size={32} color="var(--primary)" />
-                        </div>
-
                         <div className="form-group">
                             <label className="form-label">
+                                <HelpCircle size={18} color="var(--primary)" style={{ flexShrink: 0 }} />
                                 Please choose what you need assistance with
                             </label>
                             <select
@@ -155,14 +153,13 @@ export default function Tickets() {
           border-radius: 1.5rem;
           padding: 2.5rem;
         }
-        .form-section-icon {
-          margin-bottom: 1.75rem;
-        }
         .form-group {
           margin-bottom: 1.5rem;
         }
         .form-label {
-          display: block;
+          display: flex;
+          align-items: center;
+          gap: 0.5rem;
           font-weight: 600;
           font-size: 1rem;
           margin-bottom: 0.6rem;

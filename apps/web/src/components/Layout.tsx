@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
+import axios from 'axios';
 import { useAuth } from '../context/AuthContext';
 import {
     LayoutDashboard,
@@ -10,6 +11,7 @@ import {
     Building2,
     User as UserIcon,
     Users as UsersIcon,
+    AlertTriangle,
 } from 'lucide-react';
 
 interface LayoutProps {
@@ -19,7 +21,21 @@ interface LayoutProps {
 export default function Layout({ children }: LayoutProps) {
     const { user, tenants, activeTenant, logout, switchTenant, isAdmin } = useAuth();
     const [showTenantMenu, setShowTenantMenu] = useState(false);
+    const [scenariosPaused, setScenariosPaused] = useState(false);
     const navigate = useNavigate();
+
+    useEffect(() => {
+        let cancelled = false;
+        const fetchPauseStatus = async () => {
+            try {
+                const res = await axios.get('/v1/billing/usage-status');
+                if (!cancelled) setScenariosPaused(res.data.scenariosPaused ?? false);
+            } catch { /* ignore auth/network errors */ }
+        };
+        fetchPauseStatus();
+        const interval = setInterval(fetchPauseStatus, 60_000);
+        return () => { cancelled = true; clearInterval(interval); };
+    }, []);
 
     const handleLogout = () => {
         logout();
@@ -84,6 +100,22 @@ export default function Layout({ children }: LayoutProps) {
                 </div>
             </header>
 
+            {/* Usage limit notification banner */}
+            {scenariosPaused && (
+                <div className="usage-limit-banner">
+                    <AlertTriangle size={22} style={{ flexShrink: 0, marginTop: 2 }} />
+                    <div className="usage-limit-banner-body">
+                        <strong>You've reached your current usage limit, and your agent has been temporarily paused.</strong>
+                        <p>To resume your agent, please either:</p>
+                        <ul>
+                            <li>Purchase additional pages/rows on the Billing page, or</li>
+                            <li>Upgrade your subscription plan.</li>
+                        </ul>
+                        <p>Once your limit is increased, your agent will automatically resume.</p>
+                    </div>
+                </div>
+            )}
+
             {/* Main Layout */}
             <div className="main-layout">
                 {/* Sidebar Navigation */}
@@ -115,6 +147,32 @@ export default function Layout({ children }: LayoutProps) {
             </div>
 
             <style>{`
+        .usage-limit-banner {
+          display: flex;
+          align-items: flex-start;
+          gap: 1rem;
+          padding: 1.1rem 1.75rem;
+          background: rgba(245, 158, 11, 0.1);
+          border-bottom: 1px solid rgba(245, 158, 11, 0.35);
+          color: #f59e0b;
+          font-size: 0.9rem;
+          line-height: 1.5;
+        }
+        .usage-limit-banner-body strong {
+          display: block;
+          font-size: 0.95rem;
+          margin-bottom: 0.35rem;
+        }
+        .usage-limit-banner-body p {
+          margin: 0.25rem 0;
+        }
+        .usage-limit-banner-body ul {
+          margin: 0.2rem 0 0.25rem 1.25rem;
+          padding: 0;
+        }
+        .usage-limit-banner-body ul li {
+          margin-bottom: 0.15rem;
+        }
         .main-layout {
           display: flex;
           flex: 1;

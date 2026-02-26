@@ -35,6 +35,14 @@ model Tenant {
   makeOrgId     String?
   azureApiKey   String?
   azureEndpoint String?
+
+  // Usage limits & automation control
+  pagesLimit      Int      @default(5000)
+  rowsLimit       Int      @default(5000)
+  addonPagesLimit Int      @default(0)
+  addonRowsLimit  Int      @default(0)
+  scenariosPaused Boolean  @default(false)
+  lastResetAt     DateTime?
 }
 
 model User {

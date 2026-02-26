@@ -250,13 +250,8 @@ export default function Users() {
           cursor: pointer;
           transition: opacity 0.2s;
         }
-        .btn-primary:hover {
-          opacity: 0.9;
-        }
-        .btn-primary:disabled {
-          opacity: 0.6;
-          cursor: not-allowed;
-        }
+        .btn-primary:hover { opacity: 0.9; }
+        .btn-primary:disabled { opacity: 0.6; cursor: not-allowed; }
         .btn-secondary {
           display: inline-flex;
           align-items: center;
@@ -269,12 +264,67 @@ export default function Users() {
           font-weight: 600;
           font-size: 0.9rem;
           cursor: pointer;
-          transition: border-color 0.2s;
+          transition: border-color 0.2s, color 0.2s;
         }
-        .btn-secondary:hover {
+        .btn-secondary:hover { border-color: var(--primary); color: var(--primary); }
+
+        /* Modal */
+        .modal-overlay {
+          position: fixed;
+          inset: 0;
+          background: rgba(0, 0, 0, 0.6);
+          backdrop-filter: blur(4px);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          z-index: 1000;
+          padding: 1rem;
+        }
+        .modal-content {
+          background: var(--surface);
+          border: 1px solid var(--glass-border);
+          border-radius: 1.5rem;
+          padding: 2rem;
+          width: 100%;
+          max-width: 460px;
+          box-shadow: 0 24px 64px rgba(0, 0, 0, 0.4);
+        }
+
+        /* Form fields */
+        .form-group {
+          display: flex;
+          flex-direction: column;
+          gap: 0.4rem;
+          margin-bottom: 1.1rem;
+        }
+        .form-group label {
+          font-size: 0.82rem;
+          font-weight: 600;
+          color: var(--text-muted);
+          letter-spacing: 0.03em;
+          text-transform: uppercase;
+        }
+        .form-group input,
+        .form-group select {
+          width: 100%;
+          padding: 0.65rem 1rem;
+          background: rgba(255, 255, 255, 0.05);
+          border: 1px solid var(--glass-border);
+          border-radius: 0.75rem;
+          color: var(--text);
+          font-size: 0.95rem;
+          outline: none;
+          transition: border-color 0.2s, box-shadow 0.2s;
+          box-sizing: border-box;
+        }
+        .form-group input::placeholder { color: var(--text-muted); opacity: 0.6; }
+        .form-group input:focus,
+        .form-group select:focus {
           border-color: var(--primary);
-          color: var(--primary);
+          box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.15);
         }
+        .form-group select { cursor: pointer; }
+        .form-group select option { color: #000; background: #fff; }
       `}</style>
         </div>
     );
