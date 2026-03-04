@@ -69,7 +69,7 @@ router.post(
                         bankCode: data.bankCode,
                         cost: data.cost ? new Decimal(data.cost) : null,
                         tokens: data.tokens,
-                        metadata: data.metadata,
+                        metadata: data.metadata as Prisma.InputJsonValue,
                         timestamp: data.timestamp ? new Date(data.timestamp) : new Date(),
                     },
                 });
