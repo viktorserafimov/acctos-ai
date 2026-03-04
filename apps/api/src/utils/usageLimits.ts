@@ -17,12 +17,11 @@ export const TIER_LIMITS: Record<number, { pages: number; rows: number }> = {
  */
 export function getExpectedResetDate(): Date {
     const now = new Date();
-    if (now.getDate() >= 5) {
-        return new Date(now.getFullYear(), now.getMonth(), 5, 0, 0, 0);
+    if (now.getUTCDate() >= 5) {
+        return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 5));
     }
     // Before the 5th – last period started on the 5th of the previous month
-    const d = new Date(now.getFullYear(), now.getMonth() - 1, 5, 0, 0, 0);
-    return d;
+    return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 5));
 }
 
 /**
@@ -30,10 +29,10 @@ export function getExpectedResetDate(): Date {
  */
 export function getNextResetDate(): Date {
     const now = new Date();
-    if (now.getDate() >= 5) {
-        return new Date(now.getFullYear(), now.getMonth() + 1, 5, 0, 0, 0);
+    if (now.getUTCDate() >= 5) {
+        return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 5));
     }
-    return new Date(now.getFullYear(), now.getMonth(), 5, 0, 0, 0);
+    return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 5));
 }
 
 /**
@@ -62,15 +61,16 @@ export async function applyMonthlyResetIfNeeded(
         const subscription = await prisma.subscription.findUnique({ where: { tenantId } });
         const isSubscribed = subscription?.status === 'active';
 
-        // Clear add-on credits (they expire each billing period) and record reset
+        // Clear add-on credits (they expire each billing period) and record reset.
+        // scenariosPaused is NOT cleared here — it is cleared only after
+        // resumeAllScenarios() confirms the scenarios are actually resuming,
+        // so the notification stays visible until Make.com has been contacted.
         await (prisma.tenant as any).update({
             where: { id: tenantId },
             data: {
                 addonPagesLimit: 0,
                 addonRowsLimit: 0,
                 lastResetAt: expectedReset,
-                // Auto-resume scenarios only for active subscribers
-                ...(isSubscribed && tenant.scenariosPaused ? { scenariosPaused: false } : {}),
             },
         });
 
@@ -79,6 +79,17 @@ export async function applyMonthlyResetIfNeeded(
                 await resumeAllScenarios(prisma, tenantId);
             } catch (e) {
                 console.warn('[Monthly Reset] Auto-resume failed:', e);
+            }
+            // Always clear the flag after a billing-period reset: limits are
+            // back to 0, so the pause notification must disappear regardless
+            // of whether the Make.com API calls succeeded.
+            try {
+                await (prisma.tenant as any).update({
+                    where: { id: tenantId },
+                    data: { scenariosPaused: false },
+                });
+            } catch (e: any) {
+                console.warn('[Monthly Reset] Failed to clear scenariosPaused flag:', e.message?.split('\n')[0]);
             }
         }
 
@@ -275,7 +286,7 @@ export async function checkAndResumeIfPossible(
         if (!tenant || !tenant.scenariosPaused) return false;
 
         const periodStart = tenant.lastResetAt
-            ? (() => { const d = new Date(tenant.lastResetAt); d.setHours(0, 0, 0, 0); return d; })()
+            ? (() => { const d = new Date(tenant.lastResetAt); d.setUTCHours(0, 0, 0, 0); return d; })()
             : getExpectedResetDate();
 
         const usage = await getCurrentPeriodUsage(prisma, tenantId, periodStart);
@@ -286,6 +297,16 @@ export async function checkAndResumeIfPossible(
         if (usage.pages < totalPages && usage.rows < totalRows) {
             console.log(`[Auto-Resume] Tenant ${tenantId} now within limits — resuming scenarios.`);
             await resumeAllScenarios(prisma, tenantId);
+            // Ensure the DB flag is cleared so the notification disappears even if
+            // Make.com reported scenarios as already-running (resumed = 0, failed = 0).
+            try {
+                await (prisma.tenant as any).update({
+                    where: { id: tenantId },
+                    data: { scenariosPaused: false },
+                });
+            } catch (e: any) {
+                console.warn('[Auto-Resume] Failed to clear scenariosPaused flag:', e.message?.split('\n')[0]);
+            }
             return true;
         }
 
@@ -321,7 +342,7 @@ export async function checkAndPauseIfNeeded(
         if (!tenant) return false;
 
         const periodStart = tenant.lastResetAt
-            ? (() => { const d = new Date(tenant.lastResetAt); d.setHours(0, 0, 0, 0); return d; })()
+            ? (() => { const d = new Date(tenant.lastResetAt); d.setUTCHours(0, 0, 0, 0); return d; })()
             : getExpectedResetDate();
 
         const usage = await getCurrentPeriodUsage(prisma, tenantId, periodStart);
@@ -337,6 +358,16 @@ export async function checkAndPauseIfNeeded(
                 `(pages ${usage.pages}/${totalPages}, rows ${usage.rows}/${totalRows}). Pausing.`
             );
             await pauseAllScenarios(prisma, tenantId);
+            // Ensure the DB flag is set regardless of Make.com API outcome so
+            // the dashboard notification always reflects the exceeded-limit state.
+            try {
+                await (prisma.tenant as any).update({
+                    where: { id: tenantId },
+                    data: { scenariosPaused: true },
+                });
+            } catch (e: any) {
+                console.warn('[Limit Check] Failed to persist scenariosPaused flag:', e.message?.split('\n')[0]);
+            }
             return true;
         }
 

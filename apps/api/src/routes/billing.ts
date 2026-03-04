@@ -169,8 +169,8 @@ router.get('/raw-usage', async (req: AuthenticatedRequest, res: Response, next: 
         }
 
         const from = new Date();
-        from.setDate(from.getDate() - 30);
-        from.setHours(0, 0, 0, 0);
+        from.setUTCDate(from.getUTCDate() - 30);
+        from.setUTCHours(0, 0, 0, 0);
 
         const agg = await prisma.documentUsageAggregate.aggregate({
             where: { customerId: tenantId, date: { gte: from } },
@@ -259,7 +259,7 @@ router.get('/usage-status', async (req: AuthenticatedRequest, res: Response, nex
         }
 
         const periodStart = tenant.lastResetAt
-            ? (() => { const d = new Date(tenant.lastResetAt); d.setHours(0, 0, 0, 0); return d; })()
+            ? (() => { const d = new Date(tenant.lastResetAt); d.setUTCHours(0, 0, 0, 0); return d; })()
             : getExpectedResetDate();
 
         const usage = await getCurrentPeriodUsage(prisma, tenantId, periodStart);
@@ -276,6 +276,34 @@ router.get('/usage-status', async (req: AuthenticatedRequest, res: Response, nex
         const addonRowsUsed  = Math.max(0, usage.rows  - rowsLimit);
 
         const subscription = await prisma.subscription.findUnique({ where: { tenantId } });
+
+        // ── Auto-pause when limits are exceeded ───────────────────────────────────
+        // usage-status is polled every ~60 s by Layout.tsx, making this the
+        // reliable heartbeat that catches limit breaches regardless of whether
+        // Make.com has pushed any events to /api/usage/document.
+        const exceeded = usage.pages >= totalPages || usage.rows >= totalRows;
+        if (exceeded && !(tenant.scenariosPaused ?? false)) {
+            console.log(
+                `[usage-status] Tenant ${tenantId} over limit ` +
+                `(pages ${usage.pages}/${totalPages}, rows ${usage.rows}/${totalRows}). Pausing.`
+            );
+            // Write the DB flag synchronously so THIS response (and all
+            // subsequent polls) immediately return scenariosPaused: true —
+            // no waiting for the Make.com API round-trips.
+            try {
+                await (prisma.tenant as any).update({
+                    where: { id: tenantId },
+                    data: { scenariosPaused: true },
+                });
+                tenant.scenariosPaused = true;
+            } catch (e: any) {
+                console.warn('[usage-status] Failed to set scenariosPaused flag:', e.message?.split('\n')[0]);
+            }
+            // Fire-and-forget: stop the actual Make.com scenarios in the background.
+            pauseAllScenarios(prisma, tenantId).catch((e) =>
+                console.error('[usage-status] Auto-pause Make.com calls failed:', e)
+            );
+        }
 
         res.json({
             currentPages:     usage.pages,
@@ -424,23 +452,32 @@ router.post(
                 where: { customerId: tenantId },
             });
 
-            // Start a fresh billing period at midnight (to align with aggregate dates)
+            // Start a fresh billing period at UTC midnight (to align with @db.Date field)
             const resetDate = new Date();
-            resetDate.setHours(0, 0, 0, 0);
+            resetDate.setUTCHours(0, 0, 0, 0);
 
+            // Record the new period start. scenariosPaused is cleared below,
+            // only after resumeAllScenarios() has been attempted.
             await (prisma.tenant as any).update({
                 where: { id: tenantId },
-                data: {
-                    lastResetAt: resetDate,
-                    scenariosPaused: false,
-                },
+                data: { lastResetAt: resetDate },
             });
 
-            // Actually resume Make.com scenarios (DB flag alone is not enough)
+            // Resume Make.com scenarios, then clear the paused flag.
             try {
                 await resumeAllScenarios(prisma, tenantId);
             } catch (e) {
                 console.warn('[Reset Usage] Auto-resume failed:', e);
+            }
+            // Always clear the flag after an admin reset — usage is now 0
+            // so the notification must disappear regardless of Make.com outcome.
+            try {
+                await (prisma.tenant as any).update({
+                    where: { id: tenantId },
+                    data: { scenariosPaused: false },
+                });
+            } catch (e: any) {
+                console.warn('[Reset Usage] Failed to clear scenariosPaused flag:', e.message?.split('\n')[0]);
             }
 
             console.log(

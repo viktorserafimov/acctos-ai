@@ -1,6 +1,3 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
 generator client {
   provider = "prisma-client-js"
 }
@@ -10,52 +7,40 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-// =====================
-// Multi-Tenancy Models
-// =====================
-
 model Tenant {
-  id        String   @id @default(cuid())
-  name      String
-  slug      String   @unique
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  // Relations
-  memberships          Membership[]
-  usageEvents          UsageEvent[]
-  documentUsageEvents  DocumentUsageEvent[]
-  tickets              Ticket[]
-  subscription         Subscription?
-  auditLogs            AuditLog[]
-
-  // Integrations
-  makeApiKey    String?
-  makeFolderId  String?
-  makeOrgId     String?
-  azureApiKey   String?
-  azureEndpoint String?
-
-  // Usage limits & automation control
-  pagesLimit      Int      @default(5000)
-  rowsLimit       Int      @default(5000)
-  addonPagesLimit Int      @default(0)
-  addonRowsLimit  Int      @default(0)
-  scenariosPaused Boolean  @default(false)
-  lastResetAt     DateTime?
+  id                  String               @id @default(cuid())
+  name                String
+  slug                String               @unique
+  createdAt           DateTime             @default(now())
+  updatedAt           DateTime             @updatedAt
+  azureApiKey         String?
+  azureEndpoint       String?
+  makeApiKey          String?
+  makeFolderId        String?
+  makeOrgId           String?
+  addonPagesLimit     Int                  @default(0)
+  addonRowsLimit      Int                  @default(0)
+  lastResetAt         DateTime?
+  pagesLimit          Int                  @default(1000)
+  rowsLimit           Int                  @default(1000)
+  scenariosPaused     Boolean              @default(false)
+  auditLogs           AuditLog[]
+  memberships         Membership[]
+  subscription        Subscription?
+  tickets             Ticket[]
+  usageEvents         UsageEvent[]
+  documentUsageEvents DocumentUsageEvent[]
 }
 
 model User {
-  id        String   @id @default(cuid())
-  email     String   @unique
-  name      String?
-  password  String // bcrypt hash
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  // Relations
-  memberships    Membership[]
+  id             String          @id @default(cuid())
+  email          String          @unique
+  name           String?
+  password       String
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
   auditLogs      AuditLog[]
+  memberships    Membership[]
   ticketMessages TicketMessage[]
 }
 
@@ -64,35 +49,21 @@ model Membership {
   userId   String
   tenantId String
   role     Role   @default(MEMBER)
-
-  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
-  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user     User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([userId, tenantId])
   @@index([tenantId])
 }
 
-enum Role {
-  ORG_OWNER
-  ADMIN
-  BILLING_ADMIN
-  MEMBER
-  READONLY
-  SUPPORT_AGENT
-}
-
-// =====================
-// Usage Tracking Models
-// =====================
-
 model UsageEvent {
   id             String   @id @default(cuid())
   tenantId       String
-  source         String // "make" | "azure" | "openai"
+  source         String
   idempotencyKey String
-  documentType   String? // "bank" | "vat"
-  fileType       String? // "pdf" | "excel"
-  step           String? // "split" | "ocr" | "classify" | "route" | "finalize"
+  documentType   String?
+  fileType       String?
+  step           String?
   chunkStart     Int?
   chunkEnd       Int?
   bankCode       String?
@@ -100,15 +71,13 @@ model UsageEvent {
   tokens         Int?
   metadata       Json?
   timestamp      DateTime @default(now())
-
-  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  tenant         Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   @@unique([tenantId, source, idempotencyKey])
   @@index([tenantId, timestamp])
   @@index([tenantId, source])
 }
 
-// Daily aggregates for fast dashboard queries
 model UsageAggregate {
   id           String   @id @default(cuid())
   tenantId     String
@@ -126,11 +95,6 @@ model UsageAggregate {
   @@index([tenantId, date])
 }
 
-// =====================
-// Document Usage Models
-// =====================
-
-// Raw document usage events (append-only)
 model DocumentUsageEvent {
   id             String   @id @default(cuid())
   customerId     String
@@ -142,9 +106,7 @@ model DocumentUsageEvent {
   scenarioName   String?
   timestamp      DateTime @default(now())
   createdAt      DateTime @default(now())
-
-  // Relation to tenant (customerId maps to tenant.id)
-  tenant Tenant @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  tenant         Tenant   @relation(fields: [customerId], references: [id], onDelete: Cascade)
 
   @@unique([customerId, idempotencyKey])
   @@index([customerId, timestamp])
@@ -152,7 +114,6 @@ model DocumentUsageEvent {
   @@map("document_usage_events")
 }
 
-// Daily aggregates for fast dashboard queries
 model DocumentUsageAggregate {
   id         String   @id @default(cuid())
   customerId String
@@ -166,103 +127,95 @@ model DocumentUsageAggregate {
   @@map("document_usage_aggregates")
 }
 
-// =====================
-// Billing Models
-// =====================
-
 model Subscription {
   id               String    @id @default(cuid())
   tenantId         String    @unique
   stripeCustomerId String?
   stripePriceId    String?
-  status           String    @default("trialing") // trialing, active, past_due, canceled
+  status           String    @default("trialing")
   currentPeriodEnd DateTime?
   createdAt        DateTime  @default(now())
   updatedAt        DateTime  @updatedAt
-
-  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  tenant           Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 }
 
 model Plan {
-  id                 String @id @default(cuid())
-  name               String
-  stripePriceId      String @unique
-  documentsPerMonth  Int
-  pagesPerMonth      Int
-  storageGb          Int
-  supportSla         String // "standard" | "priority" | "enterprise"
-  priceMonthly       Int // in cents
-  isActive           Boolean @default(true)
+  id                String  @id @default(cuid())
+  name              String
+  stripePriceId     String  @unique
+  documentsPerMonth Int
+  pagesPerMonth     Int
+  storageGb         Int
+  supportSla        String
+  priceMonthly      Int
+  isActive          Boolean @default(true)
 }
 
-// =====================
-// Support Ticket Models
-// =====================
-
 model Ticket {
-  id        String   @id @default(cuid())
+  id        String          @id @default(cuid())
   tenantId  String
   subject   String
-  status    String   @default("open") // open, in_progress, waiting, resolved, closed
-  priority  String   @default("normal") // low, normal, high, urgent
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  tenant   Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  messages TicketMessage[]
+  status    String          @default("open")
+  priority  String          @default("normal")
+  createdAt DateTime        @default(now())
+  updatedAt DateTime        @updatedAt
+  tenant    Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  messages  TicketMessage[]
 
   @@index([tenantId, status])
   @@index([tenantId, createdAt])
 }
 
 model TicketMessage {
-  id         String   @id @default(cuid())
-  ticketId   String
-  authorId   String
-  content    String   @db.Text
-  isInternal Boolean  @default(false) // Hidden from customers
-  createdAt  DateTime @default(now())
-
-  ticket      Ticket       @relation(fields: [ticketId], references: [id], onDelete: Cascade)
-  author      User         @relation(fields: [authorId], references: [id])
+  id          String       @id @default(cuid())
+  ticketId    String
+  authorId    String
+  content     String
+  isInternal  Boolean      @default(false)
+  createdAt   DateTime     @default(now())
   attachments Attachment[]
+  author      User         @relation(fields: [authorId], references: [id])
+  ticket      Ticket       @relation(fields: [ticketId], references: [id], onDelete: Cascade)
 
   @@index([ticketId, createdAt])
 }
 
 model Attachment {
-  id         String   @id @default(cuid())
+  id         String        @id @default(cuid())
   messageId  String
   filename   String
   blobUrl    String
   mimeType   String?
   sizeBytes  Int?
-  scanStatus String   @default("pending") // pending, clean, infected
-  createdAt  DateTime @default(now())
-
-  message TicketMessage @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  scanStatus String        @default("pending")
+  createdAt  DateTime      @default(now())
+  message    TicketMessage @relation(fields: [messageId], references: [id], onDelete: Cascade)
 }
-
-// =====================
-// Audit Log Model
-// =====================
 
 model AuditLog {
   id         String   @id @default(cuid())
   userId     String
   tenantId   String?
-  action     String // e.g., "user.login", "subscription.update", "ticket.create"
-  resource   String // e.g., "user", "subscription", "ticket"
+  action     String
+  resource   String
   resourceId String?
   metadata   Json?
   ipAddress  String?
   userAgent  String?
   timestamp  DateTime @default(now())
-
-  user   User    @relation(fields: [userId], references: [id])
-  tenant Tenant? @relation(fields: [tenantId], references: [id])
+  tenant     Tenant?  @relation(fields: [tenantId], references: [id])
+  user       User     @relation(fields: [userId], references: [id])
 
   @@index([tenantId, timestamp])
   @@index([userId, timestamp])
   @@index([action])
+}
+
+enum Role {
+  ORG_OWNER
+  ADMIN
+  BILLING_ADMIN
+  MEMBER
+  READONLY
+  SUPPORT_AGENT
 }

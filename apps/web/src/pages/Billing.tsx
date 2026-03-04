@@ -142,9 +142,11 @@ export default function Billing() {
     const rowsLimit   = us?.rowsLimit   ?? 5000;
     const addonPages  = us?.addonPagesLimit ?? 0;
     const addonRows   = us?.addonRowsLimit  ?? 0;
-    // Prefer raw 30-day usage (always available) over usage-status (requires DB migration)
-    const curPages    = rawUsage?.pages ?? us?.currentPages ?? 0;
-    const curRows     = rawUsage?.rows  ?? us?.currentRows  ?? 0;
+    // Prefer billing-period usage from usage-status — this is the same window
+    // the auto-pause logic uses, so the bar turns red exactly when limits trip.
+    // Fall back to raw 30-day usage only when usage-status is unavailable.
+    const curPages    = us?.currentPages ?? rawUsage?.pages ?? 0;
+    const curRows     = us?.currentRows  ?? rawUsage?.rows  ?? 0;
     const addonPagesUsed = us?.addonPagesUsed ?? 0;
     const addonRowsUsed  = us?.addonRowsUsed  ?? 0;
     const isPaused    = us?.scenariosPaused ?? false;

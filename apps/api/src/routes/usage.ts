@@ -26,8 +26,8 @@ router.get('/summary', requireRole(...ADMIN_ROLES), async (req: AuthenticatedReq
         const period = (req.query.period as string) || '30d';
         const days = parseInt(period.replace('d', '')) || 30;
         const fromDate = new Date();
-        fromDate.setDate(fromDate.getDate() - days);
-        fromDate.setHours(0, 0, 0, 0); // Normalize to start of day
+        fromDate.setUTCDate(fromDate.getUTCDate() - days);
+        fromDate.setUTCHours(0, 0, 0, 0); // Normalize to UTC start of day (aligns with @db.Date)
 
         // Get aggregated data
         const aggregates = await prisma.usageAggregate.groupBy({
@@ -100,8 +100,8 @@ router.get('/timeseries', requireRole(...ADMIN_ROLES), async (req: Authenticated
 
         const days = parseInt(req.query.days as string) || 30;
         const fromDate = new Date();
-        fromDate.setDate(fromDate.getDate() - days);
-        fromDate.setHours(0, 0, 0, 0); // Normalize to start of day
+        fromDate.setUTCDate(fromDate.getUTCDate() - days);
+        fromDate.setUTCHours(0, 0, 0, 0); // Normalize to UTC start of day (aligns with @db.Date)
 
         const aggregates = await prisma.usageAggregate.findMany({
             where: {
@@ -166,7 +166,7 @@ router.get('/exports', requireRole(...ADMIN_ROLES), async (req: AuthenticatedReq
 
         const days = parseInt(req.query.days as string) || 30;
         const fromDate = new Date();
-        fromDate.setDate(fromDate.getDate() - days);
+        fromDate.setUTCDate(fromDate.getUTCDate() - days);
 
         const events = await prisma.usageEvent.findMany({
             where: {

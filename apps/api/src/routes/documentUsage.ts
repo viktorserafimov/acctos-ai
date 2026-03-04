@@ -67,9 +67,12 @@ router.post(
                     },
                 });
 
-                // Update daily aggregate (upsert)
-                const eventDate = new Date(event.timestamp);
-                eventDate.setHours(0, 0, 0, 0);
+                // Update daily aggregate (upsert).
+                // Always use the *received* date (now), not the event's timestamp,
+                // so that events with old document-creation timestamps still count
+                // toward the current billing period.
+                const eventDate = new Date();
+                eventDate.setUTCHours(0, 0, 0, 0);
 
                 await prisma.documentUsageAggregate.upsert({
                     where: {

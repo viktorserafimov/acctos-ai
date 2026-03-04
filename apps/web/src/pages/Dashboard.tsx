@@ -70,6 +70,7 @@ export default function Dashboard() {
 
     // Usage limits (for Document Usage tab)
     const [usageLimits, setUsageLimits] = useState<{
+        currentPages: number; currentRows: number;
         pagesLimit: number; rowsLimit: number;
         addonPagesLimit: number; addonRowsLimit: number;
         addonPagesUsed: number; addonRowsUsed: number;
@@ -142,6 +143,8 @@ export default function Dashboard() {
             if (limitsRes.status === 'fulfilled') {
                 const d = limitsRes.value.data;
                 setUsageLimits({
+                    currentPages: d.currentPages ?? 0,
+                    currentRows: d.currentRows ?? 0,
                     pagesLimit: d.pagesLimit,
                     rowsLimit: d.rowsLimit,
                     addonPagesLimit: d.addonPagesLimit,
@@ -601,7 +604,7 @@ export default function Dashboard() {
                                 <FileText size={20} color="#6366f1" />
                             </div>
                             <div className="doc-usage-row">
-                                <span className="doc-usage-current">{(documentUsage?.totals.pagesSpent || 0).toLocaleString()}</span>
+                                <span className="doc-usage-current">{(usageLimits?.currentPages ?? 0).toLocaleString()}</span>
                                 <span className="doc-usage-sep">/</span>
                                 <span className="doc-usage-limit">{(usageLimits?.pagesLimit ?? 5000).toLocaleString()}</span>
                             </div>
@@ -609,8 +612,8 @@ export default function Dashboard() {
                                 <div
                                     className="doc-quota-fill"
                                     style={{
-                                        width: `${Math.min(100, ((documentUsage?.totals.pagesSpent || 0) / (usageLimits?.pagesLimit ?? 5000)) * 100)}%`,
-                                        background: (documentUsage?.totals.pagesSpent || 0) >= (usageLimits?.pagesLimit ?? 5000) ? '#ef4444' : undefined,
+                                        width: `${Math.min(100, ((usageLimits?.currentPages ?? 0) / (usageLimits?.pagesLimit ?? 5000)) * 100)}%`,
+                                        background: (usageLimits?.currentPages ?? 0) >= (usageLimits?.pagesLimit ?? 5000) ? '#ef4444' : undefined,
                                     }}
                                 />
                             </div>
@@ -642,7 +645,7 @@ export default function Dashboard() {
                                 <TrendingUp size={20} color="#ec4899" />
                             </div>
                             <div className="doc-usage-row">
-                                <span className="doc-usage-current">{(documentUsage?.totals.rowsUsed || 0).toLocaleString()}</span>
+                                <span className="doc-usage-current">{(usageLimits?.currentRows ?? 0).toLocaleString()}</span>
                                 <span className="doc-usage-sep">/</span>
                                 <span className="doc-usage-limit">{(usageLimits?.rowsLimit ?? 5000).toLocaleString()}</span>
                             </div>
@@ -650,8 +653,8 @@ export default function Dashboard() {
                                 <div
                                     className="doc-quota-fill"
                                     style={{
-                                        width: `${Math.min(100, ((documentUsage?.totals.rowsUsed || 0) / (usageLimits?.rowsLimit ?? 5000)) * 100)}%`,
-                                        background: (documentUsage?.totals.rowsUsed || 0) >= (usageLimits?.rowsLimit ?? 5000) ? '#ef4444' : undefined,
+                                        width: `${Math.min(100, ((usageLimits?.currentRows ?? 0) / (usageLimits?.rowsLimit ?? 5000)) * 100)}%`,
+                                        background: (usageLimits?.currentRows ?? 0) >= (usageLimits?.rowsLimit ?? 5000) ? '#ef4444' : undefined,
                                     }}
                                 />
                             </div>
