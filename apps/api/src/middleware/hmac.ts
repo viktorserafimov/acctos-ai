@@ -1,8 +1,6 @@
 import crypto from 'crypto';
 import { Request, Response, NextFunction } from 'express';
 import { createError } from './errorHandler.js';
-import '../types/express.d.ts'; // Ensure type extension is loaded
-
 /**
  * Verify HMAC signature for event ingestion from Make.com
  * Header: X-HMAC-Signature: sha256=<signature>
