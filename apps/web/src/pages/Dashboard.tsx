@@ -3,6 +3,24 @@ import axios from 'axios';
 import {
     AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
 } from 'recharts';
+
+const PdfIcon = ({ size = 16 }: { size?: number }) => (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ flexShrink: 0 }}>
+        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" fill="#ef4444"/>
+        <polyline points="14,2 14,8 20,8" fill="#fca5a5" stroke="#fca5a5" strokeWidth="0.5"/>
+        <text x="5.5" y="17" fontSize="5.5" fill="white" fontWeight="bold" fontFamily="sans-serif">PDF</text>
+    </svg>
+);
+
+const ExcelIcon = ({ size = 16 }: { size?: number }) => (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ flexShrink: 0 }}>
+        <rect x="2" y="2" width="20" height="20" rx="3" fill="#16a34a"/>
+        <line x1="2" y1="9" x2="22" y2="9" stroke="#4ade80" strokeWidth="1"/>
+        <line x1="2" y1="15" x2="22" y2="15" stroke="#4ade80" strokeWidth="1"/>
+        <line x1="9" y1="2" x2="9" y2="22" stroke="#4ade80" strokeWidth="1"/>
+        <line x1="15" y1="2" x2="15" y2="22" stroke="#4ade80" strokeWidth="1"/>
+    </svg>
+);
 import { Zap, FileText, TrendingUp, RefreshCw, Euro, Download, Brain, Settings, X, CheckCircle, AlertCircle } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
@@ -600,7 +618,7 @@ export default function Dashboard() {
                         {/* Pages card */}
                         <div className="card">
                             <div className="card-title">
-                                <h3>Pages Spent</h3>
+                                <h3 style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}><PdfIcon size={18} /> Pages Spent</h3>
                                 <FileText size={20} color="#6366f1" />
                             </div>
                             <div className="doc-usage-row">
@@ -641,7 +659,7 @@ export default function Dashboard() {
                         {/* Rows card */}
                         <div className="card">
                             <div className="card-title">
-                                <h3>Rows Used</h3>
+                                <h3 style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}><ExcelIcon size={18} /> Rows Used</h3>
                                 <TrendingUp size={20} color="#ec4899" />
                             </div>
                             <div className="doc-usage-row">

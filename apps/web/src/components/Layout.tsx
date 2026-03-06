@@ -53,8 +53,11 @@ export default function Layout({ children }: LayoutProps) {
             {/* Header */}
             <header className="header">
                 <div className="brand">
-                    <h1>Acctos AI</h1>
-                    <p>Client Dashboard</p>
+                    <img src="/aiassist_logo.png" alt="Acctos AI" className="brand-logo" />
+                    <div>
+                        <h1>Acctos AI</h1>
+                        <p>Client Dashboard</p>
+                    </div>
                 </div>
 
                 <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
@@ -147,6 +150,9 @@ export default function Layout({ children }: LayoutProps) {
             </div>
 
             <style>{`
+        .brand { display: flex; align-items: center; gap: 0.75rem; }
+        .brand-logo { height: 40px; width: auto; object-fit: contain; }
+
         .usage-limit-banner {
           display: flex;
           align-items: flex-start;

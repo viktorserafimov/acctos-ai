@@ -2,6 +2,24 @@ import React, { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
 import { CreditCard, Check, AlertCircle, ExternalLink } from 'lucide-react';
 
+const PdfIcon = ({ size = 16 }: { size?: number }) => (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ flexShrink: 0 }}>
+        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" fill="#ef4444"/>
+        <polyline points="14,2 14,8 20,8" fill="#fca5a5" stroke="#fca5a5" strokeWidth="0.5"/>
+        <text x="5.5" y="17" fontSize="5.5" fill="white" fontWeight="bold" fontFamily="sans-serif">PDF</text>
+    </svg>
+);
+
+const ExcelIcon = ({ size = 16 }: { size?: number }) => (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ flexShrink: 0 }}>
+        <rect x="2" y="2" width="20" height="20" rx="3" fill="#16a34a"/>
+        <line x1="2" y1="9" x2="22" y2="9" stroke="#4ade80" strokeWidth="1"/>
+        <line x1="2" y1="15" x2="22" y2="15" stroke="#4ade80" strokeWidth="1"/>
+        <line x1="9" y1="2" x2="9" y2="22" stroke="#4ade80" strokeWidth="1"/>
+        <line x1="15" y1="2" x2="15" y2="22" stroke="#4ade80" strokeWidth="1"/>
+    </svg>
+);
+
 // ── Hardcoded plan definitions ────────────────────────────────────────────────
 const PLANS = [
     {
@@ -86,7 +104,7 @@ interface UsageStatus {
 export default function Billing() {
     const [usageStatus, setUsageStatus] = useState<UsageStatus | null>(null);
     const [rawUsage, setRawUsage] = useState<{ pages: number; rows: number } | null>(null);
-    const [currentTier, setCurrentTier] = useState(0);
+    const [currentTier, setCurrentTier] = useState(2); // Default: Professional plan
     const [loading, setLoading] = useState(true);
 
     const [addonQty, setAddonQty] = useState<Record<string, number>>({
@@ -206,7 +224,7 @@ export default function Billing() {
                     {/* Base pages */}
                     <div className="quota-item">
                         <div className="quota-item-header">
-                            <span className="quota-label">Pages Used</span>
+                            <span className="quota-label" style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}><PdfIcon size={15} /> Pages Used</span>
                             <span className="quota-value">
                                 {curPages.toLocaleString()} / {pagesLimit.toLocaleString()}
                             </span>
@@ -219,7 +237,7 @@ export default function Billing() {
                     {/* Base rows */}
                     <div className="quota-item">
                         <div className="quota-item-header">
-                            <span className="quota-label">Rows Used</span>
+                            <span className="quota-label" style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}><ExcelIcon size={15} /> Rows Used</span>
                             <span className="quota-value">
                                 {curRows.toLocaleString()} / {rowsLimit.toLocaleString()}
                             </span>
@@ -234,7 +252,7 @@ export default function Billing() {
                 {addonPages > 0 && (
                     <div className="addon-tracker">
                         <div className="addon-tracker-label">
-                            <span>Extra Pages (add-on)</span>
+                            <span style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}><PdfIcon size={13} /> Extra Pages (add-on)</span>
                             <span>{addonPagesUsed.toLocaleString()} / {addonPages.toLocaleString()}</span>
                         </div>
                         <div className="quota-bar">
@@ -248,7 +266,7 @@ export default function Billing() {
                 {addonRows > 0 && (
                     <div className="addon-tracker">
                         <div className="addon-tracker-label">
-                            <span>Extra Rows (add-on)</span>
+                            <span style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}><ExcelIcon size={13} /> Extra Rows (add-on)</span>
                             <span>{addonRowsUsed.toLocaleString()} / {addonRows.toLocaleString()}</span>
                         </div>
                         <div className="quota-bar">
@@ -297,7 +315,24 @@ export default function Billing() {
                                 ))}
                             </ul>
 
-                            {!isLowerTier && !isCurrentPlan && (
+                            {isCurrentPlan && (
+                                <button disabled className="btn-current-plan">
+                                    <Check size={16} />
+                                    Currently chosen plan
+                                </button>
+                            )}
+                            {!isCurrentPlan && isLowerTier && (
+                                <a
+                                    href={plan.stripeLink}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="btn-secondary btn-plan"
+                                >
+                                    <ExternalLink size={16} />
+                                    Downgrade to {plan.name}
+                                </a>
+                            )}
+                            {!isCurrentPlan && !isLowerTier && (
                                 <a
                                     href={plan.stripeLink}
                                     target="_blank"
@@ -307,12 +342,6 @@ export default function Billing() {
                                     <ExternalLink size={16} />
                                     {isSubscribed ? `Upgrade to ${plan.name}` : `Subscribe — ${plan.priceLabel}/mo`}
                                 </a>
-                            )}
-                            {isCurrentPlan && (
-                                <div className="current-plan-indicator">
-                                    <Check size={16} />
-                                    You are on this plan
-                                </div>
                             )}
                         </div>
                     );
@@ -338,7 +367,10 @@ export default function Billing() {
                         <div key={addon.id} className="addon-card">
                             <div className="addon-header">
                                 <div>
-                                    <h4>{addon.name}</h4>
+                                    <h4 style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                        {addon.addonType === 'pages' ? <PdfIcon size={18} /> : <ExcelIcon size={18} />}
+                                        {addon.name}
+                                    </h4>
                                     <p className="addon-description">{addon.description}</p>
                                 </div>
                                 <div className="addon-rate">
@@ -554,19 +586,39 @@ export default function Billing() {
         }
         .btn-primary:hover { opacity: 0.9; }
         .btn-plan { width: 100%; margin-top: auto; }
-        .current-plan-indicator {
+        .btn-current-plan {
           display: flex;
           align-items: center;
           justify-content: center;
           gap: 0.5rem;
           padding: 0.75rem 1.5rem;
+          background: rgba(16, 185, 129, 0.1);
           border: 1px solid #10b981;
           border-radius: 0.75rem;
           color: #10b981;
           font-weight: 600;
           font-size: 0.9rem;
           margin-top: auto;
+          width: 100%;
+          cursor: default;
+          opacity: 1;
         }
+        .btn-secondary.btn-plan {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: 0.5rem;
+          padding: 0.75rem 1.5rem;
+          background: rgba(255,255,255,0.05);
+          border: 1px solid var(--glass-border);
+          border-radius: 0.75rem;
+          color: var(--text-muted);
+          font-weight: 600;
+          text-decoration: none;
+          transition: opacity 0.2s;
+          margin-top: auto;
+        }
+        .btn-secondary.btn-plan:hover { opacity: 0.8; }
         .downgrade-notice {
           text-align: center;
           color: var(--text-muted);
