@@ -11,13 +11,7 @@ const PdfIcon = ({ size = 16 }: { size?: number }) => (
 );
 
 const ExcelIcon = ({ size = 16 }: { size?: number }) => (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ flexShrink: 0 }}>
-        <rect x="2" y="2" width="20" height="20" rx="3" fill="#16a34a"/>
-        <line x1="2" y1="9" x2="22" y2="9" stroke="#4ade80" strokeWidth="1"/>
-        <line x1="2" y1="15" x2="22" y2="15" stroke="#4ade80" strokeWidth="1"/>
-        <line x1="9" y1="2" x2="9" y2="22" stroke="#4ade80" strokeWidth="1"/>
-        <line x1="15" y1="2" x2="15" y2="22" stroke="#4ade80" strokeWidth="1"/>
-    </svg>
+    <img src="/excel_logo.png" alt="Excel" width={size} height={size} style={{ objectFit: 'contain', flexShrink: 0 }} />
 );
 
 // ── Hardcoded plan definitions ────────────────────────────────────────────────
@@ -57,26 +51,26 @@ const PLANS = [
 
 const ADD_ONS = [
     {
-        id: 'custom_rows',
-        name: 'Custom Rows',
-        description: 'Additional row processing capacity',
-        pricePerUnit: 50,
-        unitSize: 1000,
-        unitLabel: 'rows',
-        quantities: [1000, 2000, 3000, 5000, 10000, 20000],
-        stripeLink: 'https://buy.stripe.com/9B65kE4lUaCu0vE9A0aZi0k',
-        addonType: 'rows',
-    },
-    {
         id: 'custom_pages',
         name: 'Custom Pages',
-        description: 'Additional page processing capacity',
-        pricePerUnit: 249,
-        unitSize: 1000,
-        unitLabel: 'pages',
-        quantities: [1000, 2000, 3000, 5000, 10000, 20000],
-        stripeLink: 'https://buy.stripe.com/8x200kg4CbGya6efYoaZi0l',
+        description: 'Additional PDF page processing capacity',
         addonType: 'pages',
+        options: [
+            { qty: 1000,  label: '1,000 pages',  price: '£249',   stripeLink: 'https://buy.stripe.com/8x200kg4CbGya6efYoaZi0l' },
+            { qty: 2000,  label: '2,000 pages',  price: '£498',   stripeLink: 'https://buy.stripe.com/5kQcN62dMaCu5PYfYoaZi0m' },
+            { qty: 5000,  label: '5,000 pages',  price: '£1,245', stripeLink: 'https://buy.stripe.com/00w4gA6u29yqguCbI8aZi0n' },
+        ],
+    },
+    {
+        id: 'custom_rows',
+        name: 'Custom Rows',
+        description: 'Additional Excel row processing capacity',
+        addonType: 'rows',
+        options: [
+            { qty: 1000,  label: '1,000 rows',  price: '£50',  stripeLink: 'https://buy.stripe.com/9B65kE4lUaCu0vE9A0aZi0k' },
+            { qty: 2000,  label: '2,000 rows',  price: '£100', stripeLink: 'https://buy.stripe.com/fZu28s6u26mecem6nOaZi0o' },
+            { qty: 5000,  label: '5,000 rows',  price: '£250', stripeLink: 'https://buy.stripe.com/aFafZiaKi4e6cem9A0aZi0p' },
+        ],
     },
 ];
 
@@ -106,11 +100,6 @@ export default function Billing() {
     const [rawUsage, setRawUsage] = useState<{ pages: number; rows: number } | null>(null);
     const [currentTier, setCurrentTier] = useState(2); // Default: Professional plan
     const [loading, setLoading] = useState(true);
-
-    const [addonQty, setAddonQty] = useState<Record<string, number>>({
-        custom_rows: 1000,
-        custom_pages: 1000,
-    });
 
     const fetchData = useCallback(async () => {
         try {
@@ -143,8 +132,6 @@ export default function Billing() {
 
     useEffect(() => { fetchData(); }, [fetchData]);
 
-    const addonPrice = (addon: typeof ADD_ONS[number], qty: number) =>
-        (qty / addon.unitSize) * addon.pricePerUnit;
 
     const isSubscribed = (usageStatus?.subscriptionStatus === 'active') || currentTier > 0;
 
@@ -206,10 +193,8 @@ export default function Billing() {
                 <div className="current-plan-header">
                     <div>
                         <h3>Current Period Usage</h3>
-                        <div className="status-badge" data-status={us?.subscriptionStatus}>
-                            {us?.subscriptionStatus === 'trialing' ? 'Free Trial'
-                                : us?.subscriptionStatus === 'active' ? 'Active Subscription'
-                                : us?.subscriptionStatus || 'Unknown'}
+                        <div className="status-badge" data-status="active">
+                            Professional Plan
                         </div>
                         {us?.nextResetAt && (
                             <p className="reset-note">
@@ -359,61 +344,30 @@ export default function Billing() {
                 resumed after a successful payment (requires Stripe webhook configuration).
             </p>
             <div className="addons-grid">
-                {ADD_ONS.map((addon) => {
-                    const qty   = addonQty[addon.id] || addon.quantities[0];
-                    const price = addonPrice(addon, qty);
-
-                    return (
-                        <div key={addon.id} className="addon-card">
-                            <div className="addon-header">
-                                <div>
-                                    <h4 style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                                        {addon.addonType === 'pages' ? <PdfIcon size={18} /> : <ExcelIcon size={18} />}
-                                        {addon.name}
-                                    </h4>
-                                    <p className="addon-description">{addon.description}</p>
-                                </div>
-                                <div className="addon-rate">
-                                    £{addon.pricePerUnit} per {addon.unitSize.toLocaleString()} {addon.unitLabel} (one-time)
-                                </div>
-                            </div>
-
-                            <div className="addon-controls">
-                                <div className="addon-qty-group">
-                                    <label className="addon-qty-label">Quantity</label>
-                                    <select
-                                        className="addon-select"
-                                        value={qty}
-                                        onChange={(e) =>
-                                            setAddonQty((prev) => ({ ...prev, [addon.id]: parseInt(e.target.value) }))
-                                        }
-                                    >
-                                        {addon.quantities.map((q) => (
-                                            <option key={q} value={q}>
-                                                {q.toLocaleString()} {addon.unitLabel}
-                                            </option>
-                                        ))}
-                                    </select>
-                                </div>
-
-                                <div className="addon-price-summary">
-                                    <span className="addon-total-label">One-time payment</span>
-                                    <span className="addon-total-value">£{price.toLocaleString()}</span>
-                                </div>
-                            </div>
-
-                            <a
-                                href={`${addon.stripeLink}?prefilled_quantity=${qty / addon.unitSize}`}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="btn-primary btn-addon"
-                            >
-                                <ExternalLink size={16} />
-                                Add {addon.name}
-                            </a>
+                {ADD_ONS.map((addon) => (
+                    <div key={addon.id} className="addon-card">
+                        <h4 style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.4rem' }}>
+                            {addon.addonType === 'pages' ? <PdfIcon size={18} /> : <ExcelIcon size={18} />}
+                            {addon.name}
+                        </h4>
+                        <p className="addon-description" style={{ marginBottom: '1.25rem' }}>{addon.description}</p>
+                        <div className="addon-options">
+                            {addon.options.map((opt) => (
+                                <a
+                                    key={opt.qty}
+                                    href={opt.stripeLink}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="addon-option-btn"
+                                >
+                                    <span className="addon-option-qty">{opt.label}</span>
+                                    <span className="addon-option-price">{opt.price}</span>
+                                    <ExternalLink size={14} style={{ marginLeft: 'auto', flexShrink: 0 }} />
+                                </a>
+                            ))}
                         </div>
-                    );
-                })}
+                    </div>
+                ))}
             </div>
 
             <style>{`
@@ -640,34 +594,28 @@ export default function Billing() {
           flex-direction: column;
           gap: 1.25rem;
         }
-        .addon-header {
-          display: flex;
-          justify-content: space-between;
-          align-items: flex-start;
-          gap: 1rem;
-        }
-        .addon-header h4 { font-size: 1.1rem; margin-bottom: 0.25rem; }
         .addon-description { color: var(--text-muted); font-size: 0.875rem; }
-        .addon-rate { font-size: 0.875rem; color: var(--primary); font-weight: 600; white-space: nowrap; }
-        .addon-controls { display: flex; align-items: center; gap: 1.5rem; }
-        .addon-qty-group { flex: 1; display: flex; flex-direction: column; gap: 0.4rem; }
-        .addon-qty-label { font-size: 0.8rem; color: var(--text-muted); }
-        .addon-select {
-          width: 100%;
-          padding: 0.6rem 1rem;
-          background: rgba(255, 255, 255, 0.05);
+        .addon-options { display: flex; flex-direction: column; gap: 0.6rem; }
+        .addon-option-btn {
+          display: flex;
+          align-items: center;
+          gap: 0.75rem;
+          padding: 0.75rem 1rem;
+          background: rgba(255, 255, 255, 0.04);
           border: 1px solid var(--glass-border);
           border-radius: 0.75rem;
           color: var(--text);
+          text-decoration: none;
+          transition: all 0.2s;
           font-size: 0.9rem;
-          cursor: pointer;
         }
-        .addon-select:focus { outline: none; border-color: var(--primary); }
-        .addon-select option { color: #000; background: #fff; }
-        .addon-price-summary { display: flex; flex-direction: column; align-items: flex-end; gap: 0.2rem; }
-        .addon-total-label { font-size: 0.8rem; color: var(--text-muted); }
-        .addon-total-value { font-size: 1.4rem; font-weight: 700; color: var(--primary); }
-        .btn-addon { align-self: flex-start; }
+        .addon-option-btn:hover {
+          border-color: var(--primary);
+          background: rgba(99, 102, 241, 0.08);
+          color: var(--primary);
+        }
+        .addon-option-qty { font-weight: 600; }
+        .addon-option-price { color: var(--primary); font-weight: 700; margin-left: auto; margin-right: 0.5rem; }
       `}</style>
         </div>
     );

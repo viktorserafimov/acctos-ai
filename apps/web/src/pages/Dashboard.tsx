@@ -13,13 +13,7 @@ const PdfIcon = ({ size = 16 }: { size?: number }) => (
 );
 
 const ExcelIcon = ({ size = 16 }: { size?: number }) => (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ flexShrink: 0 }}>
-        <rect x="2" y="2" width="20" height="20" rx="3" fill="#16a34a"/>
-        <line x1="2" y1="9" x2="22" y2="9" stroke="#4ade80" strokeWidth="1"/>
-        <line x1="2" y1="15" x2="22" y2="15" stroke="#4ade80" strokeWidth="1"/>
-        <line x1="9" y1="2" x2="9" y2="22" stroke="#4ade80" strokeWidth="1"/>
-        <line x1="15" y1="2" x2="15" y2="22" stroke="#4ade80" strokeWidth="1"/>
-    </svg>
+    <img src="/excel_logo.png" alt="Excel" width={size} height={size} style={{ objectFit: 'contain', flexShrink: 0 }} />
 );
 import { Zap, FileText, TrendingUp, RefreshCw, Euro, Download, Brain, Settings, X, CheckCircle, AlertCircle } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
