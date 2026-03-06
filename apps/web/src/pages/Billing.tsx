@@ -24,7 +24,7 @@ const PLANS = [
         tier: 1,
         pagesPerMonth: 1000,
         rowsPerMonth: 1000,
-        features: ['1,000 pages / month', '1,000 rows / month'],
+        features: ['1,000 PDF pages / month', '1,000 Excel rows / month'],
     },
     {
         id: 'professional',
@@ -35,7 +35,7 @@ const PLANS = [
         pagesPerMonth: 5000,
         rowsPerMonth: 5000,
         highlighted: true,
-        features: ['5,000 pages / month', '5,000 rows / month'],
+        features: ['5,000 PDF pages / month', '5,000 Excel rows / month'],
     },
     {
         id: 'enterprise',
@@ -45,31 +45,31 @@ const PLANS = [
         tier: 3,
         pagesPerMonth: 15000,
         rowsPerMonth: 15000,
-        features: ['15,000 pages / month', '15,000 rows / month'],
+        features: ['15,000 PDF pages / month', '15,000 Excel rows / month'],
     },
 ];
 
 const ADD_ONS = [
     {
         id: 'custom_pages',
-        name: 'Custom Pages',
+        name: 'Custom PDF Pages',
         description: 'Additional PDF page processing capacity',
         addonType: 'pages',
         options: [
-            { qty: 1000,  label: '1,000 pages',  price: '£249',   stripeLink: 'https://buy.stripe.com/8x200kg4CbGya6efYoaZi0l' },
-            { qty: 2000,  label: '2,000 pages',  price: '£498',   stripeLink: 'https://buy.stripe.com/5kQcN62dMaCu5PYfYoaZi0m' },
-            { qty: 5000,  label: '5,000 pages',  price: '£1,245', stripeLink: 'https://buy.stripe.com/00w4gA6u29yqguCbI8aZi0n' },
+            { qty: 1000,  label: '1,000 PDF pages',  price: '£249',   stripeLink: 'https://buy.stripe.com/8x200kg4CbGya6efYoaZi0l' },
+            { qty: 2000,  label: '2,000 PDF pages',  price: '£498',   stripeLink: 'https://buy.stripe.com/5kQcN62dMaCu5PYfYoaZi0m' },
+            { qty: 5000,  label: '5,000 PDF pages',  price: '£1,245', stripeLink: 'https://buy.stripe.com/00w4gA6u29yqguCbI8aZi0n' },
         ],
     },
     {
         id: 'custom_rows',
-        name: 'Custom Rows',
+        name: 'Custom Excel Rows',
         description: 'Additional Excel row processing capacity',
         addonType: 'rows',
         options: [
-            { qty: 1000,  label: '1,000 rows',  price: '£50',  stripeLink: 'https://buy.stripe.com/9B65kE4lUaCu0vE9A0aZi0k' },
-            { qty: 2000,  label: '2,000 rows',  price: '£100', stripeLink: 'https://buy.stripe.com/fZu28s6u26mecem6nOaZi0o' },
-            { qty: 5000,  label: '5,000 rows',  price: '£250', stripeLink: 'https://buy.stripe.com/aFafZiaKi4e6cem9A0aZi0p' },
+            { qty: 1000,  label: '1,000 Excel rows',  price: '£50',  stripeLink: 'https://buy.stripe.com/9B65kE4lUaCu0vE9A0aZi0k' },
+            { qty: 2000,  label: '2,000 Excel rows',  price: '£100', stripeLink: 'https://buy.stripe.com/fZu28s6u26mecem6nOaZi0o' },
+            { qty: 5000,  label: '5,000 Excel rows',  price: '£250', stripeLink: 'https://buy.stripe.com/aFafZiaKi4e6cem9A0aZi0p' },
         ],
     },
 ];
@@ -100,6 +100,7 @@ export default function Billing() {
     const [rawUsage, setRawUsage] = useState<{ pages: number; rows: number } | null>(null);
     const [currentTier, setCurrentTier] = useState(2); // Default: Professional plan
     const [loading, setLoading] = useState(true);
+    const [addonSelection, setAddonSelection] = useState<Record<string, number>>({ custom_pages: 0, custom_rows: 0 });
 
     const fetchData = useCallback(async () => {
         try {
@@ -209,7 +210,7 @@ export default function Billing() {
                     {/* Base pages */}
                     <div className="quota-item">
                         <div className="quota-item-header">
-                            <span className="quota-label" style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}><PdfIcon size={15} /> Pages Used</span>
+                            <span className="quota-label" style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}><PdfIcon size={15} /> PDF Pages Used</span>
                             <span className="quota-value">
                                 {curPages.toLocaleString()} / {pagesLimit.toLocaleString()}
                             </span>
@@ -222,7 +223,7 @@ export default function Billing() {
                     {/* Base rows */}
                     <div className="quota-item">
                         <div className="quota-item-header">
-                            <span className="quota-label" style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}><ExcelIcon size={15} /> Rows Used</span>
+                            <span className="quota-label" style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}><ExcelIcon size={15} /> Excel Rows Used</span>
                             <span className="quota-value">
                                 {curRows.toLocaleString()} / {rowsLimit.toLocaleString()}
                             </span>
@@ -237,7 +238,7 @@ export default function Billing() {
                 {addonPages > 0 && (
                     <div className="addon-tracker">
                         <div className="addon-tracker-label">
-                            <span style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}><PdfIcon size={13} /> Extra Pages (add-on)</span>
+                            <span style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}><PdfIcon size={13} /> Extra PDF Pages (add-on)</span>
                             <span>{addonPagesUsed.toLocaleString()} / {addonPages.toLocaleString()}</span>
                         </div>
                         <div className="quota-bar">
@@ -251,7 +252,7 @@ export default function Billing() {
                 {addonRows > 0 && (
                     <div className="addon-tracker">
                         <div className="addon-tracker-label">
-                            <span style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}><ExcelIcon size={13} /> Extra Rows (add-on)</span>
+                            <span style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}><ExcelIcon size={13} /> Extra Excel Rows (add-on)</span>
                             <span>{addonRowsUsed.toLocaleString()} / {addonRows.toLocaleString()}</span>
                         </div>
                         <div className="quota-bar">
@@ -312,6 +313,7 @@ export default function Billing() {
                                     target="_blank"
                                     rel="noopener noreferrer"
                                     className="btn-secondary btn-plan"
+                                    onClick={() => setCurrentTier(plan.tier)}
                                 >
                                     <ExternalLink size={16} />
                                     Downgrade to {plan.name}
@@ -323,6 +325,7 @@ export default function Billing() {
                                     target="_blank"
                                     rel="noopener noreferrer"
                                     className="btn-primary btn-plan"
+                                    onClick={() => setCurrentTier(plan.tier)}
                                 >
                                     <ExternalLink size={16} />
                                     {isSubscribed ? `Upgrade to ${plan.name}` : `Subscribe — ${plan.priceLabel}/mo`}
@@ -344,30 +347,52 @@ export default function Billing() {
                 resumed after a successful payment (requires Stripe webhook configuration).
             </p>
             <div className="addons-grid">
-                {ADD_ONS.map((addon) => (
-                    <div key={addon.id} className="addon-card">
-                        <h4 style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.4rem' }}>
-                            {addon.addonType === 'pages' ? <PdfIcon size={18} /> : <ExcelIcon size={18} />}
-                            {addon.name}
-                        </h4>
-                        <p className="addon-description" style={{ marginBottom: '1.25rem' }}>{addon.description}</p>
-                        <div className="addon-options">
-                            {addon.options.map((opt) => (
-                                <a
-                                    key={opt.qty}
-                                    href={opt.stripeLink}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    className="addon-option-btn"
-                                >
-                                    <span className="addon-option-qty">{opt.label}</span>
-                                    <span className="addon-option-price">{opt.price}</span>
-                                    <ExternalLink size={14} style={{ marginLeft: 'auto', flexShrink: 0 }} />
-                                </a>
-                            ))}
+                {ADD_ONS.map((addon) => {
+                    const selIdx = addonSelection[addon.id] ?? 0;
+                    const selected = addon.options[selIdx];
+                    return (
+                        <div key={addon.id} className="addon-card">
+                            <div className="addon-card-top">
+                                <h4 style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                    {addon.addonType === 'pages' ? <PdfIcon size={20} /> : <ExcelIcon size={20} />}
+                                    {addon.name}
+                                </h4>
+                                <p className="addon-description">{addon.description}</p>
+                            </div>
+
+                            {/* Pill selector */}
+                            <div className="addon-pills">
+                                {addon.options.map((opt, idx) => (
+                                    <button
+                                        key={opt.qty}
+                                        className={`addon-pill${selIdx === idx ? ' active' : ''}`}
+                                        onClick={() => setAddonSelection(prev => ({ ...prev, [addon.id]: idx }))}
+                                    >
+                                        <span className="pill-qty">{opt.qty.toLocaleString()}</span>
+                                        <span className="pill-price">{opt.price}</span>
+                                    </button>
+                                ))}
+                            </div>
+
+                            {/* Summary row */}
+                            <div className="addon-summary">
+                                <span className="addon-summary-label">One-time payment</span>
+                                <span className="addon-summary-price">{selected.price}</span>
+                            </div>
+
+                            {/* Purchase CTA */}
+                            <a
+                                href={selected.stripeLink}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="btn-primary addon-purchase-btn"
+                            >
+                                <ExternalLink size={16} />
+                                Purchase {selected.label}
+                            </a>
                         </div>
-                    </div>
-                ))}
+                    );
+                })}
             </div>
 
             <style>{`
@@ -594,28 +619,55 @@ export default function Billing() {
           flex-direction: column;
           gap: 1.25rem;
         }
-        .addon-description { color: var(--text-muted); font-size: 0.875rem; }
-        .addon-options { display: flex; flex-direction: column; gap: 0.6rem; }
-        .addon-option-btn {
+        .addon-description { color: var(--text-muted); font-size: 0.875rem; margin-top: 0.25rem; }
+        .addon-card-top { margin-bottom: 1.25rem; }
+        .addon-card-top h4 { font-size: 1.1rem; }
+        .addon-pills {
           display: flex;
+          gap: 0.5rem;
+          margin-bottom: 1.25rem;
+        }
+        .addon-pill {
+          flex: 1;
+          display: flex;
+          flex-direction: column;
           align-items: center;
-          gap: 0.75rem;
-          padding: 0.75rem 1rem;
+          gap: 0.2rem;
+          padding: 0.65rem 0.5rem;
           background: rgba(255, 255, 255, 0.04);
           border: 1px solid var(--glass-border);
           border-radius: 0.75rem;
-          color: var(--text);
-          text-decoration: none;
+          cursor: pointer;
           transition: all 0.2s;
-          font-size: 0.9rem;
+          color: var(--text-muted);
         }
-        .addon-option-btn:hover {
+        .addon-pill:hover { border-color: var(--primary); color: var(--primary); background: rgba(99,102,241,0.06); }
+        .addon-pill.active {
           border-color: var(--primary);
-          background: rgba(99, 102, 241, 0.08);
+          background: rgba(99, 102, 241, 0.12);
           color: var(--primary);
         }
-        .addon-option-qty { font-weight: 600; }
-        .addon-option-price { color: var(--primary); font-weight: 700; margin-left: auto; margin-right: 0.5rem; }
+        .pill-qty { font-size: 0.95rem; font-weight: 700; }
+        .pill-price { font-size: 0.75rem; opacity: 0.8; }
+        .addon-summary {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          padding: 0.75rem 1rem;
+          background: rgba(255,255,255,0.03);
+          border-radius: 0.75rem;
+          margin-bottom: 1rem;
+        }
+        .addon-summary-label { font-size: 0.85rem; color: var(--text-muted); }
+        .addon-summary-price { font-size: 1.4rem; font-weight: 700; color: var(--primary); }
+        .addon-purchase-btn {
+          width: 100%;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: 0.5rem;
+          text-decoration: none;
+        }
       `}</style>
         </div>
     );

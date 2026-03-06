@@ -612,7 +612,7 @@ export default function Dashboard() {
                         {/* Pages card */}
                         <div className="card">
                             <div className="card-title">
-                                <h3 style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}><PdfIcon size={18} /> Pages Spent</h3>
+                                <h3 style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}><PdfIcon size={18} /> PDF Pages Spent</h3>
                                 <FileText size={20} color="#6366f1" />
                             </div>
                             <div className="doc-usage-row">
@@ -632,7 +632,7 @@ export default function Dashboard() {
                             {usageLimits && usageLimits.addonPagesLimit > 0 && (
                                 <div style={{ marginTop: '0.75rem' }}>
                                     <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginBottom: '0.3rem' }}>
-                                        Extra pages (add-on): {usageLimits.addonPagesUsed.toLocaleString()} / {usageLimits.addonPagesLimit.toLocaleString()}
+                                        Extra PDF pages (add-on): {usageLimits.addonPagesUsed.toLocaleString()} / {usageLimits.addonPagesLimit.toLocaleString()}
                                     </p>
                                     <div className="doc-quota-bar">
                                         <div
@@ -646,14 +646,14 @@ export default function Dashboard() {
                                 </div>
                             )}
                             <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginTop: '0.75rem' }}>
-                                Pages processed in {period}
+                                PDF Pages processed in {period}
                             </p>
                         </div>
 
                         {/* Rows card */}
                         <div className="card">
                             <div className="card-title">
-                                <h3 style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}><ExcelIcon size={18} /> Rows Used</h3>
+                                <h3 style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}><ExcelIcon size={18} /> Excel Rows Used</h3>
                                 <TrendingUp size={20} color="#ec4899" />
                             </div>
                             <div className="doc-usage-row">
@@ -673,7 +673,7 @@ export default function Dashboard() {
                             {usageLimits && usageLimits.addonRowsLimit > 0 && (
                                 <div style={{ marginTop: '0.75rem' }}>
                                     <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginBottom: '0.3rem' }}>
-                                        Extra rows (add-on): {usageLimits.addonRowsUsed.toLocaleString()} / {usageLimits.addonRowsLimit.toLocaleString()}
+                                        Extra Excel rows (add-on): {usageLimits.addonRowsUsed.toLocaleString()} / {usageLimits.addonRowsLimit.toLocaleString()}
                                     </p>
                                     <div className="doc-quota-bar">
                                         <div
@@ -687,7 +687,7 @@ export default function Dashboard() {
                                 </div>
                             )}
                             <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginTop: '0.75rem' }}>
-                                Data rows extracted in {period}
+                                Excel Rows extracted in {period}
                             </p>
                         </div>
                     </div>
