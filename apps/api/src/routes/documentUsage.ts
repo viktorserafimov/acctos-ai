@@ -11,7 +11,7 @@ const router = Router();
 
 // Document usage ingestion schema
 const documentUsageSchema = z.object({
-    customerId: z.string(),
+    customerId: z.string().optional(),
     pagesSpent: z.number().int().min(0),
     rowsUsed: z.number().int().min(0),
     jobId: z.string().optional(),
@@ -43,9 +43,19 @@ router.post(
             // Validate payload
             const data = documentUsageSchema.parse(req.body);
 
+            // Resolve tenant: use provided customerId, fall back to DEFAULT_TENANT_ID env var
+            const resolvedCustomerId = data.customerId || process.env.DEFAULT_TENANT_ID;
+            if (!resolvedCustomerId) {
+                return next(createError(
+                    'No customerId provided and DEFAULT_TENANT_ID is not set on the server',
+                    400,
+                    'MISSING_CUSTOMER_ID'
+                ));
+            }
+
             // Verify tenant exists
             const tenant = await prisma.tenant.findUnique({
-                where: { id: data.customerId },
+                where: { id: resolvedCustomerId },
             });
 
             if (!tenant) {
@@ -56,7 +66,7 @@ router.post(
             try {
                 const event = await prisma.documentUsageEvent.create({
                     data: {
-                        customerId: data.customerId,
+                        customerId: resolvedCustomerId,
                         idempotencyKey,
                         pagesSpent: data.pagesSpent,
                         rowsUsed: data.rowsUsed,
@@ -77,12 +87,12 @@ router.post(
                 await prisma.documentUsageAggregate.upsert({
                     where: {
                         customerId_date: {
-                            customerId: data.customerId,
+                            customerId: resolvedCustomerId,
                             date: eventDate,
                         },
                     },
                     create: {
-                        customerId: data.customerId,
+                        customerId: resolvedCustomerId,
                         date: eventDate,
                         pagesSpent: data.pagesSpent,
                         rowsUsed: data.rowsUsed,
@@ -96,7 +106,7 @@ router.post(
                 });
 
                 // Fire-and-forget limit check — pauses Make.com scenarios if limits exceeded
-                checkAndPauseIfNeeded(prisma, data.customerId).catch((e) =>
+                checkAndPauseIfNeeded(prisma, resolvedCustomerId).catch((e) =>
                     console.error('[documentUsage] Limit check failed:', e)
                 );
 
