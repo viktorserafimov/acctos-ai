@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
-import { CreditCard, Check, AlertCircle, ExternalLink } from 'lucide-react';
+import { CreditCard, Check, AlertCircle, ExternalLink, FlaskConical } from 'lucide-react';
+import { useAuth } from '../context/AuthContext';
 
 const PdfIcon = ({ size = 16 }: { size?: number }) => (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ flexShrink: 0 }}>
@@ -74,6 +75,24 @@ const ADD_ONS = [
     },
 ];
 
+// Admin-only test payment links (Stripe test mode)
+const TEST_PAYMENTS = [
+    {
+        id: 'test_starter',
+        label: 'Starter Plan — Test Subscribe',
+        description: 'Simulates a Starter (£249/mo) subscription purchase',
+        stripeLink: 'https://buy.stripe.com/test_28EeVd6CF4p07O7cWgcs800',
+        type: 'subscription',
+    },
+    {
+        id: 'test_rows_1000',
+        label: '1,000 Excel Rows — Test Add-on',
+        description: 'Simulates a 1,000 row add-on one-time payment',
+        stripeLink: 'https://buy.stripe.com/test_00wbJ19OR7Bc1pJbSccs801',
+        type: 'addon',
+    },
+];
+
 // Map Stripe Price IDs → plan tier (fill in once Stripe webhooks are live)
 // e.g.  'price_xxxxx': 1,  'price_yyyyy': 2,  'price_zzzzz': 3
 const PRICE_ID_TO_TIER: Record<string, number> = {};
@@ -96,6 +115,7 @@ interface UsageStatus {
 }
 
 export default function Billing() {
+    const { isAdmin } = useAuth();
     const [usageStatus, setUsageStatus] = useState<UsageStatus | null>(null);
     const [rawUsage, setRawUsage] = useState<{ pages: number; rows: number } | null>(null);
     const [currentTier, setCurrentTier] = useState(2); // Default: Professional plan
@@ -395,6 +415,42 @@ export default function Billing() {
                 })}
             </div>
 
+            {/* Admin-only test payment section */}
+            {isAdmin && (
+                <div className="test-section">
+                    <div className="test-section-header">
+                        <FlaskConical size={18} />
+                        <h3>Test Payments <span className="admin-badge">Admin Only</span></h3>
+                    </div>
+                    <p className="test-section-desc">
+                        Stripe test-mode links — use card <code>4242 4242 4242 4242</code>, any future date, any CVC.
+                        These run through the same webhook flow as live payments so you can verify the full integration end-to-end.
+                    </p>
+                    <div className="test-payments-grid">
+                        {TEST_PAYMENTS.map((tp) => (
+                            <div key={tp.id} className="test-payment-card">
+                                <div className="test-payment-info">
+                                    <span className={`test-type-badge test-type-badge--${tp.type}`}>
+                                        {tp.type === 'subscription' ? 'Subscription' : 'Add-on'}
+                                    </span>
+                                    <p className="test-payment-label">{tp.label}</p>
+                                    <p className="test-payment-desc">{tp.description}</p>
+                                </div>
+                                <a
+                                    href={tp.stripeLink}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="btn-test"
+                                >
+                                    <ExternalLink size={14} />
+                                    Open Test Checkout
+                                </a>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            )}
+
             <style>{`
         .billing-header {
           display: flex;
@@ -611,13 +667,16 @@ export default function Billing() {
           margin-bottom: 2rem;
         }
         .addon-card {
-          background: var(--surface);
-          border: 1px solid var(--glass-border);
+          background: rgba(255, 255, 255, 0.04);
+          backdrop-filter: blur(12px);
+          -webkit-backdrop-filter: blur(12px);
+          border: 1px solid rgba(255, 255, 255, 0.1);
           border-radius: 1.5rem;
           padding: 2rem;
           display: flex;
           flex-direction: column;
           gap: 1.25rem;
+          box-shadow: 0 4px 24px rgba(0, 0, 0, 0.2);
         }
         .addon-description { color: var(--text-muted); font-size: 0.875rem; margin-top: 0.25rem; }
         .addon-card-top { margin-bottom: 1.25rem; }
@@ -632,29 +691,41 @@ export default function Billing() {
           display: flex;
           flex-direction: column;
           align-items: center;
-          gap: 0.2rem;
-          padding: 0.65rem 0.5rem;
+          gap: 0.25rem;
+          padding: 0.85rem 0.5rem;
           background: rgba(255, 255, 255, 0.04);
-          border: 1px solid var(--glass-border);
-          border-radius: 0.75rem;
+          backdrop-filter: blur(8px);
+          -webkit-backdrop-filter: blur(8px);
+          border: 1px solid rgba(255, 255, 255, 0.12);
+          border-radius: 0.9rem;
           cursor: pointer;
           transition: all 0.2s;
           color: var(--text-muted);
+          box-shadow: 0 2px 8px rgba(0,0,0,0.15);
         }
-        .addon-pill:hover { border-color: var(--primary); color: var(--primary); background: rgba(99,102,241,0.06); }
+        .addon-pill:hover {
+          border-color: var(--primary);
+          color: var(--primary);
+          background: rgba(99,102,241,0.1);
+          box-shadow: 0 4px 16px rgba(99,102,241,0.2);
+          transform: translateY(-1px);
+        }
         .addon-pill.active {
           border-color: var(--primary);
-          background: rgba(99, 102, 241, 0.12);
+          background: rgba(99, 102, 241, 0.18);
           color: var(--primary);
+          box-shadow: 0 4px 20px rgba(99,102,241,0.3);
+          transform: translateY(-1px);
         }
-        .pill-qty { font-size: 0.95rem; font-weight: 700; }
-        .pill-price { font-size: 0.75rem; opacity: 0.8; }
+        .pill-qty { font-size: 1rem; font-weight: 700; }
+        .pill-price { font-size: 0.78rem; font-weight: 500; opacity: 0.85; }
         .addon-summary {
           display: flex;
           justify-content: space-between;
           align-items: center;
           padding: 0.75rem 1rem;
-          background: rgba(255,255,255,0.03);
+          background: rgba(99, 102, 241, 0.07);
+          border: 1px solid rgba(99, 102, 241, 0.18);
           border-radius: 0.75rem;
           margin-bottom: 1rem;
         }
@@ -667,6 +738,124 @@ export default function Billing() {
           justify-content: center;
           gap: 0.5rem;
           text-decoration: none;
+        }
+        .test-section {
+          margin-top: 2.5rem;
+          padding: 1.75rem 2rem;
+          background: rgba(245, 158, 11, 0.05);
+          backdrop-filter: blur(12px);
+          -webkit-backdrop-filter: blur(12px);
+          border: 1px dashed rgba(245, 158, 11, 0.4);
+          border-radius: 1.5rem;
+        }
+        .test-section-header {
+          display: flex;
+          align-items: center;
+          gap: 0.6rem;
+          margin-bottom: 0.75rem;
+          color: #f59e0b;
+        }
+        .test-section-header h3 {
+          display: flex;
+          align-items: center;
+          gap: 0.6rem;
+          margin: 0;
+          color: #f59e0b;
+        }
+        .admin-badge {
+          font-size: 0.7rem;
+          font-weight: 700;
+          padding: 0.15rem 0.55rem;
+          background: rgba(245, 158, 11, 0.15);
+          border: 1px solid rgba(245, 158, 11, 0.4);
+          border-radius: 0.5rem;
+          color: #f59e0b;
+          text-transform: uppercase;
+          letter-spacing: 0.05em;
+        }
+        .test-section-desc {
+          font-size: 0.875rem;
+          color: var(--text-muted);
+          margin-bottom: 1.25rem;
+          line-height: 1.6;
+        }
+        .test-section-desc code {
+          background: rgba(255,255,255,0.08);
+          padding: 0.1rem 0.4rem;
+          border-radius: 0.35rem;
+          font-size: 0.85rem;
+          color: var(--text);
+        }
+        .test-payments-grid {
+          display: grid;
+          grid-template-columns: repeat(2, 1fr);
+          gap: 1rem;
+        }
+        @media (max-width: 700px) {
+          .test-payments-grid { grid-template-columns: 1fr; }
+        }
+        .test-payment-card {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 1rem;
+          padding: 1.25rem 1.5rem;
+          background: rgba(255, 255, 255, 0.04);
+          backdrop-filter: blur(8px);
+          -webkit-backdrop-filter: blur(8px);
+          border: 1px solid rgba(245, 158, 11, 0.2);
+          border-radius: 1rem;
+        }
+        .test-payment-info { flex: 1; }
+        .test-type-badge {
+          display: inline-block;
+          font-size: 0.68rem;
+          font-weight: 700;
+          text-transform: uppercase;
+          letter-spacing: 0.06em;
+          padding: 0.15rem 0.5rem;
+          border-radius: 0.4rem;
+          margin-bottom: 0.4rem;
+        }
+        .test-type-badge--subscription {
+          background: rgba(99, 102, 241, 0.15);
+          color: var(--primary);
+          border: 1px solid rgba(99, 102, 241, 0.3);
+        }
+        .test-type-badge--addon {
+          background: rgba(16, 185, 129, 0.12);
+          color: #10b981;
+          border: 1px solid rgba(16, 185, 129, 0.3);
+        }
+        .test-payment-label {
+          font-size: 0.9rem;
+          font-weight: 600;
+          color: var(--text);
+          margin: 0 0 0.2rem 0;
+        }
+        .test-payment-desc {
+          font-size: 0.78rem;
+          color: var(--text-muted);
+          margin: 0;
+        }
+        .btn-test {
+          display: flex;
+          align-items: center;
+          gap: 0.4rem;
+          padding: 0.55rem 1rem;
+          background: rgba(245, 158, 11, 0.1);
+          border: 1px solid rgba(245, 158, 11, 0.4);
+          border-radius: 0.75rem;
+          color: #f59e0b;
+          font-size: 0.82rem;
+          font-weight: 600;
+          text-decoration: none;
+          white-space: nowrap;
+          transition: all 0.2s;
+        }
+        .btn-test:hover {
+          background: rgba(245, 158, 11, 0.18);
+          box-shadow: 0 4px 14px rgba(245, 158, 11, 0.2);
         }
       `}</style>
         </div>
