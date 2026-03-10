@@ -240,8 +240,8 @@ router.get('/document-usage', async (req: AuthenticatedRequest, res: Response, n
 
         // Calculate totals
         const totals = {
-            pagesSpent: aggregates.reduce((sum, agg) => sum + agg.pagesSpent, 0),
-            rowsUsed: aggregates.reduce((sum, agg) => sum + agg.rowsUsed, 0),
+            pagesSpent: aggregates.reduce((sum: number, agg) => sum + agg.pagesSpent, 0),
+            rowsUsed: aggregates.reduce((sum: number, agg) => sum + agg.rowsUsed, 0),
         };
 
         // Format response
@@ -249,7 +249,7 @@ router.get('/document-usage', async (req: AuthenticatedRequest, res: Response, n
             customerId: tenantId,
             from: from || null,
             to: to || null,
-            days: aggregates.map(agg => ({
+            days: aggregates.map((agg) => ({
                 date: agg.date.toISOString().split('T')[0],
                 pagesSpent: agg.pagesSpent,
                 rowsUsed: agg.rowsUsed,

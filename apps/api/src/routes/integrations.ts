@@ -2,7 +2,7 @@ import { Router, Response, NextFunction } from 'express';
 import axios from 'axios';
 import { authenticateToken, AuthenticatedRequest } from '../middleware/auth.js';
 import { createError } from '../middleware/errorHandler.js';
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient, Prisma } from '@prisma/client';
 import { checkAndPauseIfNeeded, pauseAllScenarios, resumeAllScenarios } from '../utils/usageLimits.js';
 
 const router = Router();
@@ -243,7 +243,7 @@ router.post('/make/sync', async (req: AuthenticatedRequest, res: Response, next:
         if (datesToUpdate.length > 0) {
             const minDate = new Date(datesToUpdate.sort()[0]);
 
-            await prisma.$transaction(async (tx) => {
+            await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
                 // Clear existing 'make' aggregates for this range
                 await tx.usageAggregate.deleteMany({
                     where: {
