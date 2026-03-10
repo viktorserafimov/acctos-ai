@@ -1,12 +1,13 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { User, Lock, ArrowRight, CheckCircle, Building2, Mail } from 'lucide-react';
+import { User, Lock, ArrowRight, CheckCircle, Building2, Mail, Eye, EyeOff } from 'lucide-react';
 
 export default function LandingPage() {
     const [isLogin, setIsLogin] = useState(true);
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
+    const [showPassword, setShowPassword] = useState(false);
     const [name, setName] = useState('');
     const [tenantName, setTenantName] = useState('');
     const [error, setError] = useState('');
@@ -44,8 +45,12 @@ export default function LandingPage() {
             <div className="landing-content">
                 <div className="landing-hero">
                     <div className="brand-badge">Document Intelligence Platform</div>
-                    <h1>Acctos AI</h1>
+                    <div className="landing-title">
+                        <h1>Acctos AI</h1>
+                        <img src="/aiassist_logo.png" alt="Acctos AI" className="landing-logo" />
+                    </div>
                     <p>Your complete dashboard for document processing usage, billing, and support.</p>
+                    <p className="powered-by">Powered by AI Assist BG</p>
 
                     <div className="feature-list">
                         <div className="feature-item">
@@ -124,13 +129,21 @@ export default function LandingPage() {
                             <div className="input-wrapper">
                                 <Lock size={18} className="input-icon" />
                                 <input
-                                    type="password"
+                                    type={showPassword ? 'text' : 'password'}
                                     placeholder="••••••••"
                                     value={password}
                                     onChange={(e) => setPassword(e.target.value)}
                                     required
                                     minLength={6}
                                 />
+                                <button
+                                    type="button"
+                                    className="password-toggle"
+                                    onClick={() => setShowPassword(!showPassword)}
+                                    tabIndex={-1}
+                                >
+                                    {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                                </button>
                             </div>
                         </div>
 
@@ -167,13 +180,31 @@ export default function LandingPage() {
           width: 100%;
           align-items: center;
         }
+        .landing-title {
+          display: flex;
+          align-items: center;
+          gap: 0.75rem;
+          margin: 1.5rem 0 0;
+        }
+        .landing-logo {
+          height: 104px;
+          width: auto;
+          object-fit: contain;
+          flex-shrink: 0;
+        }
         .landing-hero h1 {
           font-size: 3.5rem;
           line-height: 1.1;
-          margin: 1.5rem 0;
+          margin: 0;
           background: linear-gradient(to right, #818cf8, #c084fc);
           -webkit-background-clip: text;
           -webkit-text-fill-color: transparent;
+        }
+        .powered-by {
+          font-size: 0.85rem;
+          color: var(--text-muted);
+          margin: -1rem 0 1.5rem;
+          letter-spacing: 0.3px;
         }
         .landing-hero p {
           font-size: 1.1rem;
@@ -253,6 +284,22 @@ export default function LandingPage() {
         }
         .input-wrapper input:focus {
           border-color: var(--primary);
+        }
+        .password-toggle {
+          position: absolute;
+          right: 1rem;
+          top: 50%;
+          transform: translateY(-50%);
+          background: none;
+          border: none;
+          color: var(--text-muted);
+          cursor: pointer;
+          padding: 0;
+          display: flex;
+          align-items: center;
+        }
+        .password-toggle:hover {
+          color: var(--text);
         }
         .btn-primary {
           background: linear-gradient(135deg, var(--primary), var(--secondary));

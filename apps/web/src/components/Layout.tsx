@@ -56,7 +56,7 @@ export default function Layout({ children }: LayoutProps) {
                     <img src="/aiassist_logo.png" alt="Acctos AI" className="brand-logo" />
                     <div>
                         <h1>Acctos AI</h1>
-                        <p>Client Dashboard</p>
+                        <p>Powered by AI Assist BG</p>
                     </div>
                 </div>
 
@@ -151,7 +151,7 @@ export default function Layout({ children }: LayoutProps) {
 
             <style>{`
         .brand { display: flex; align-items: center; gap: 0.75rem; }
-        .brand-logo { height: 40px; width: auto; object-fit: contain; }
+        .brand-logo { height: 96px; width: auto; object-fit: contain; position: relative; top: 6px; }
 
         .usage-limit-banner {
           display: flex;
