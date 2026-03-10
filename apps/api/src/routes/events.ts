@@ -1,6 +1,6 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import { z } from 'zod';
-import { PrismaClient, Prisma } from '@prisma/client';
+import { PrismaClient } from '@prisma/client';
 import { Decimal, PrismaClientKnownRequestError } from '@prisma/client/runtime/library';
 import { verifyHmacSignature } from '../middleware/hmac.js';
 import { createError } from '../middleware/errorHandler.js';
@@ -69,7 +69,7 @@ router.post(
                         bankCode: data.bankCode,
                         cost: data.cost ? new Decimal(data.cost) : null,
                         tokens: data.tokens,
-                        metadata: data.metadata as Prisma.JsonValue,
+                        metadata: data.metadata as object,
                         timestamp: data.timestamp ? new Date(data.timestamp) : new Date(),
                     },
                 });
