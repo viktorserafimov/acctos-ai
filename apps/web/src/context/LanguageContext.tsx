@@ -204,6 +204,11 @@ const en = {
     removeConfirm: (email: string) => `Remove ${email} from this tenant?`,
     removeUserFailed: 'Failed to remove user',
     createUserFailed: 'Failed to create user',
+    changePassword: 'Change Password',
+    newPassword: 'New Password *',
+    savingPassword: 'Saving...',
+    changePasswordFailed: 'Failed to change password',
+    passwordChanged: 'Password changed successfully',
 };
 
 const bg: typeof en = {
@@ -408,6 +413,11 @@ const bg: typeof en = {
     removeConfirm: (email: string) => `Премахнете ${email} от тази организация?`,
     removeUserFailed: 'Неуспешно премахване на потребителя',
     createUserFailed: 'Неуспешно създаване на потребителя',
+    changePassword: 'Промяна на паролата',
+    newPassword: 'Нова парола *',
+    savingPassword: 'Запазване...',
+    changePasswordFailed: 'Неуспешна промяна на паролата',
+    passwordChanged: 'Паролата е сменена успешно',
 };
 
 type Translations = typeof en;

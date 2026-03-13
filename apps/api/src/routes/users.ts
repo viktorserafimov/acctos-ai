@@ -18,6 +18,10 @@ const createUserSchema = z.object({
     role: z.enum(['ADMIN', 'MEMBER']),
 });
 
+const changePasswordSchema = z.object({
+    password: z.string().min(8),
+});
+
 /**
  * GET /v1/users
  *
@@ -97,6 +101,41 @@ router.post('/', requireRole(...ADMIN_ROLES), async (req: AuthenticatedRequest, 
         res.status(201).json({
             user: { id: user.id, email: user.email, name: user.name, role: membership.role, membershipId: membership.id },
         });
+    } catch (error) {
+        if (error instanceof z.ZodError) {
+            return next(createError('Invalid input: ' + error.errors[0].message, 400, 'VALIDATION_ERROR'));
+        }
+        next(error);
+    }
+});
+
+/**
+ * PUT /v1/users/:membershipId/password
+ *
+ * Change the password of a user in the current tenant.
+ */
+router.put('/:membershipId/password', requireRole(...ADMIN_ROLES), async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+    try {
+        const prisma: PrismaClient = req.app.locals.prisma;
+        const tenantId = req.user!.tenantId;
+
+        const membership = await prisma.membership.findFirst({
+            where: { id: req.params.membershipId, tenantId },
+        });
+
+        if (!membership) {
+            return next(createError('User not found in this tenant', 404, 'NOT_FOUND'));
+        }
+
+        const body = changePasswordSchema.parse(req.body);
+        const hashedPassword = await bcrypt.hash(body.password, 10);
+
+        await prisma.user.update({
+            where: { id: membership.userId },
+            data: { password: hashedPassword },
+        });
+
+        res.json({ success: true });
     } catch (error) {
         if (error instanceof z.ZodError) {
             return next(createError('Invalid input: ' + error.errors[0].message, 400, 'VALIDATION_ERROR'));

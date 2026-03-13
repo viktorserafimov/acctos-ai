@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
-import { UserPlus, Trash2, X, Shield, User as UserIcon } from 'lucide-react';
+import { UserPlus, Trash2, X, Shield, User as UserIcon, KeyRound } from 'lucide-react';
 import { useLanguage } from '../context/LanguageContext';
 
 interface UserEntry {
@@ -25,6 +25,13 @@ export default function Users() {
     const [formName, setFormName] = useState('');
     const [formPassword, setFormPassword] = useState('');
     const [formRole, setFormRole] = useState<'ADMIN' | 'MEMBER'>('MEMBER');
+
+    // Change password state
+    const [changePwdUser, setChangePwdUser] = useState<UserEntry | null>(null);
+    const [newPassword, setNewPassword] = useState('');
+    const [savingPwd, setSavingPwd] = useState(false);
+    const [pwdError, setPwdError] = useState<string | null>(null);
+    const [pwdSuccess, setPwdSuccess] = useState(false);
 
     const fetchUsers = async () => {
         try {
@@ -76,6 +83,28 @@ export default function Users() {
         } catch (err: any) {
             const msg = err.response?.data?.error?.message || t.removeUserFailed;
             alert(msg);
+        }
+    };
+
+    const handleChangePassword = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!changePwdUser) return;
+        setSavingPwd(true);
+        setPwdError(null);
+        setPwdSuccess(false);
+        try {
+            await axios.put(`/v1/users/${changePwdUser.membershipId}/password`, { password: newPassword });
+            setPwdSuccess(true);
+            setNewPassword('');
+            setTimeout(() => {
+                setChangePwdUser(null);
+                setPwdSuccess(false);
+            }, 1500);
+        } catch (err: any) {
+            const msg = err.response?.data?.error?.message || t.changePasswordFailed;
+            setPwdError(msg);
+        } finally {
+            setSavingPwd(false);
         }
     };
 
@@ -159,6 +188,21 @@ export default function Users() {
                                 </td>
                                 <td style={{ ...tdStyle, textAlign: 'right' }}>
                                     <button
+                                        onClick={() => { setChangePwdUser(u); setNewPassword(''); setPwdError(null); setPwdSuccess(false); }}
+                                        title={t.changePassword}
+                                        style={{
+                                            background: 'none',
+                                            border: 'none',
+                                            color: 'var(--text-muted)',
+                                            cursor: 'pointer',
+                                            padding: '0.5rem',
+                                            borderRadius: '0.5rem',
+                                            marginRight: '0.25rem',
+                                        }}
+                                    >
+                                        <KeyRound size={16} />
+                                    </button>
+                                    <button
                                         onClick={() => handleDelete(u.membershipId, u.email)}
                                         title={t.removeUser}
                                         style={{
@@ -185,6 +229,55 @@ export default function Users() {
                     </tbody>
                 </table>
             </div>
+
+            {/* Change Password Modal */}
+            {changePwdUser && (
+                <div className="modal-overlay" onClick={() => setChangePwdUser(null)}>
+                    <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
+                            <h3>{t.changePassword}</h3>
+                            <button onClick={() => setChangePwdUser(null)} style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer' }}>
+                                <X size={20} />
+                            </button>
+                        </div>
+                        <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', marginBottom: '1.25rem' }}>{changePwdUser.email}</p>
+
+                        {pwdError && (
+                            <div style={{ padding: '0.75rem 1rem', marginBottom: '1rem', background: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.3)', borderRadius: '0.5rem', color: '#ef4444', fontSize: '0.9rem' }}>
+                                {pwdError}
+                            </div>
+                        )}
+                        {pwdSuccess && (
+                            <div style={{ padding: '0.75rem 1rem', marginBottom: '1rem', background: 'rgba(34, 197, 94, 0.1)', border: '1px solid rgba(34, 197, 94, 0.3)', borderRadius: '0.5rem', color: '#22c55e', fontSize: '0.9rem' }}>
+                                {t.passwordChanged}
+                            </div>
+                        )}
+
+                        <form onSubmit={handleChangePassword}>
+                            <div className="form-group">
+                                <label>{t.newPassword}</label>
+                                <input
+                                    type="password"
+                                    value={newPassword}
+                                    onChange={(e) => setNewPassword(e.target.value)}
+                                    required
+                                    minLength={8}
+                                    placeholder={t.minChars}
+                                    autoFocus
+                                />
+                            </div>
+                            <div style={{ display: 'flex', gap: '0.75rem', marginTop: '1.5rem' }}>
+                                <button type="submit" className="btn-primary" disabled={savingPwd} style={{ flex: 1 }}>
+                                    {savingPwd ? t.savingPassword : t.changePassword}
+                                </button>
+                                <button type="button" className="btn-secondary" onClick={() => setChangePwdUser(null)} style={{ flex: 1 }}>
+                                    {t.cancel}
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            )}
 
             {/* Create User Modal */}
             {showCreateForm && (
