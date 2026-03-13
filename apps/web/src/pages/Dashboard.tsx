@@ -17,6 +17,7 @@ const ExcelIcon = ({ size = 16 }: { size?: number }) => (
 );
 import { Zap, FileText, TrendingUp, RefreshCw, Euro, Download, Brain, Settings, X, CheckCircle, AlertCircle } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { useLanguage } from '../context/LanguageContext';
 
 interface UsageSummary {
     period: string;
@@ -53,6 +54,7 @@ interface DocumentUsageData {
 
 export default function Dashboard() {
     const { isAdmin } = useAuth();
+    const { t } = useLanguage();
 
     // 1. All State Hooks
     const [summary, setSummary] = useState<UsageSummary | null>(null);
@@ -194,7 +196,7 @@ export default function Dashboard() {
         } catch (error) {
             console.error('Sync failed:', error);
             setLoading(false);
-            alert('Failed to sync data');
+            alert(t.syncFailed);
         }
     };
 
@@ -204,13 +206,11 @@ export default function Dashboard() {
         try {
             const res = await axios.post('/v1/integrations/make/pause-all');
             if (res.data.scenariosPaused === 0 && res.data.scenariosFailed > 0) {
-                setScenarioActionError(
-                    `Pause failed: all ${res.data.scenariosFailed} scenario(s) returned an error from Make.com. Check the server logs for details.`
-                );
+                setScenarioActionError(t.pauseErrorAll(res.data.scenariosFailed));
             }
             await fetchDocumentUsage();
         } catch {
-            setScenarioActionError('Pause failed: could not reach the server. Check your Make.com API key.');
+            setScenarioActionError(t.pauseErrorServer);
         } finally {
             setScenarioActionLoading(false);
         }
@@ -222,29 +222,25 @@ export default function Dashboard() {
         try {
             const res = await axios.post('/v1/integrations/make/resume-all');
             if (res.data.scenariosResumed === 0 && res.data.scenariosFailed > 0) {
-                setScenarioActionError(
-                    `Resume failed: all ${res.data.scenariosFailed} scenario(s) returned an error from Make.com. Check the server logs for details.`
-                );
+                setScenarioActionError(t.resumeErrorAll(res.data.scenariosFailed));
             }
             await fetchDocumentUsage();
         } catch {
-            setScenarioActionError('Resume failed: could not reach the server. Check your Make.com API key.');
+            setScenarioActionError(t.resumeErrorServer);
         } finally {
             setScenarioActionLoading(false);
         }
     };
 
     const handleResetUsage = async () => {
-        if (!window.confirm(
-            'This will permanently delete ALL pages and rows usage data, resetting both counters to 0 everywhere.\n\nMake.com, Azure, and OpenAI usage data will NOT be affected.\n\nContinue?'
-        )) return;
+        if (!window.confirm(t.resetConfirm)) return;
         setResettingUsage(true);
         try {
             await axios.post('/v1/billing/reset-usage');
             // Refresh both tabs so all views show 0
             await Promise.all([fetchDocumentUsage(), fetchData()]);
         } catch {
-            alert('Reset failed. Make sure you have admin privileges.');
+            alert(t.resetFailed);
         } finally {
             setResettingUsage(false);
         }
@@ -260,12 +256,12 @@ export default function Dashboard() {
                 azureApiKey,
                 azureEndpoint
             });
-            alert('Settings saved successfully!');
+            alert(t.settingsSaved);
             setShowSettings(false);
             setMakeApiKey(''); // Clear secrets from memory
             setAzureApiKey('');
         } catch (error) {
-            alert('Failed to save settings.');
+            alert(t.settingsFailed);
             console.error(error);
         }
     };
@@ -393,7 +389,7 @@ export default function Dashboard() {
         return (
             <div className="loading-container">
                 <div className="spinner"></div>
-                <p style={{ marginTop: '1rem', color: 'var(--text-muted)' }}>Loading usage data...</p>
+                <p style={{ marginTop: '1rem', color: 'var(--text-muted)' }}>{t.loadingUsage}</p>
             </div>
         );
     }
@@ -404,23 +400,23 @@ export default function Dashboard() {
             {/* Header */}
             <div className="page-header">
                 <div>
-                    <h2>Usage Dashboard</h2>
+                    <h2>{t.usageDashboard}</h2>
                     <p style={{ color: 'var(--text-muted)', marginTop: '0.5rem' }}>
-                        Track your document processing usage across all platforms
+                        {t.usageDashboardSubtitle}
                     </p>
                 </div>
                 <div style={{ display: 'flex', gap: '1rem' }}>
                     <button className="btn-secondary" onClick={handleExport}>
                         <Download size={16} />
-                        Export
+                        {t.export}
                     </button>
                     <button className="btn-secondary" onClick={handleSync} disabled={syncCooldown || loading}>
                         <RefreshCw size={16} />
-                        {syncCooldown ? 'Wait...' : 'Refresh / Sync'}
+                        {syncCooldown ? t.wait : t.refreshSync}
                     </button>
                     <button className="btn-secondary" onClick={() => setShowSettings(true)}>
                         <Settings size={16} />
-                        Settings
+                        {t.settings}
                     </button>
                 </div>
             </div>
@@ -430,22 +426,22 @@ export default function Dashboard() {
                 <div className="period-filter">
                     <button
                         className={`period-btn ${filterMode === '7d' ? 'active' : ''}`}
-                        onClick={() => { setFilterMode('7d'); setActiveDays(7); setCustomDaysError(''); }}
-                    >Last 7 days</button>
+                        onClick={() => { setFilterMode('7d'); setActiveDays(7); setCustomDaysError(''); fetchData(7); fetchOpenAICosts(7); }}
+                    >{t.last7days}</button>
                     <button
                         className={`period-btn ${filterMode === '30d' ? 'active' : ''}`}
-                        onClick={() => { setFilterMode('30d'); setActiveDays(30); setCustomDaysError(''); }}
-                    >Last 30 days</button>
+                        onClick={() => { setFilterMode('30d'); setActiveDays(30); setCustomDaysError(''); fetchData(30); fetchOpenAICosts(30); }}
+                    >{t.last30days}</button>
                     <button
                         className={`period-btn ${filterMode === 'custom' ? 'active' : ''}`}
                         onClick={() => { setFilterMode('custom'); setCustomDays(''); setCustomDaysError(''); }}
-                    >Custom</button>
+                    >{t.custom}</button>
                     {filterMode === 'custom' && (
                         <div className="custom-days-wrap">
                             <input
                                 type="number"
                                 className="custom-days-input"
-                                placeholder="Days (1–30)"
+                                placeholder={t.daysPlaceholder}
                                 value={customDays}
                                 min={1}
                                 max={30}
@@ -456,17 +452,17 @@ export default function Dashboard() {
                                 onClick={() => {
                                     const d = parseInt(customDays);
                                     if (isNaN(d) || d < 1) {
-                                        setCustomDaysError('Please enter a number between 1 and 30.');
+                                        setCustomDaysError(t.customDaysError1);
                                         return;
                                     }
                                     if (d > 30) {
-                                        setCustomDaysError('Maximum allowed is 30 days.');
+                                        setCustomDaysError(t.customDaysError2);
                                         return;
                                     }
                                     setCustomDaysError('');
                                     setActiveDays(d);
                                 }}
-                            >Apply</button>
+                            >{t.apply}</button>
                         </div>
                     )}
                     {customDaysError && <span className="custom-days-error">{customDaysError}</span>}
@@ -480,14 +476,14 @@ export default function Dashboard() {
                         className={`tab-btn ${activeTab === 'infrastructure' ? 'active' : ''}`}
                         onClick={() => setActiveTab('infrastructure')}
                     >
-                        Infrastructure Usage
+                        {t.infrastructureUsage}
                     </button>
                 )}
                 <button
                     className={`tab-btn ${activeTab === 'document' ? 'active' : ''}`}
                     onClick={() => setActiveTab('document')}
                 >
-                    Document Usage
+                    {t.documentUsage}
                 </button>
             </div>
 
@@ -501,8 +497,8 @@ export default function Dashboard() {
                                 style={{ background: usageLimits?.scenariosPaused ? '#ef4444' : '#10b981' }}
                             />
                             <span style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>
-                                Scenarios: <strong style={{ color: 'var(--text)' }}>
-                                    {usageLimits?.scenariosPaused ? 'Paused' : 'Running'}
+                                {t.scenarios} <strong style={{ color: 'var(--text)' }}>
+                                    {usageLimits?.scenariosPaused ? t.paused : t.running}
                                 </strong>
                             </span>
                         </div>
@@ -512,21 +508,21 @@ export default function Dashboard() {
                                 onClick={handlePauseScenarios}
                                 disabled={scenarioActionLoading || usageLimits?.scenariosPaused === true}
                             >
-                                {scenarioActionLoading ? 'Working…' : 'Pause Scenarios'}
+                                {scenarioActionLoading ? t.working : t.pauseScenarios}
                             </button>
                             <button
                                 className="sc-btn sc-btn-resume"
                                 onClick={handleResumeScenarios}
                                 disabled={scenarioActionLoading || usageLimits?.scenariosPaused === false}
                             >
-                                {scenarioActionLoading ? 'Working…' : 'Resume Scenarios'}
+                                {scenarioActionLoading ? t.working : t.resumeScenarios}
                             </button>
                             <button
                                 className="sc-btn sc-btn-reset"
                                 onClick={handleResetUsage}
                                 disabled={resettingUsage}
                             >
-                                {resettingUsage ? 'Resetting…' : 'Reset Pages & Rows'}
+                                {resettingUsage ? t.resetting : t.resetPagesRows}
                             </button>
                         </div>
                     </div>
@@ -548,11 +544,11 @@ export default function Dashboard() {
                             </div>
                             <div className="usage-value">
                                 {parseFloat(summary?.summary?.make?.totalCost || '0').toFixed(2)}
-                                <span className="usage-unit">credits</span>
+                                <span className="usage-unit">{t.credits}</span>
                             </div>
                             <div className="cost-display">
                                 <Zap size={18} />
-                                <span>{summary?.summary?.make?.eventCount || 0} operations</span>
+                                <span>{summary?.summary?.make?.eventCount || 0} {t.operations}</span>
                             </div>
                             <div className="cost-display" style={{ marginTop: '0.25rem' }}>
                                 <Euro size={18} />
@@ -567,7 +563,7 @@ export default function Dashboard() {
                             </div>
                             <div className="usage-value">
                                 {summary?.summary?.azure?.eventCount || 0}
-                                <span className="usage-unit">events</span>
+                                <span className="usage-unit">{t.events}</span>
                             </div>
                             <div className="cost-display">
                                 <Euro size={18} />
@@ -582,7 +578,7 @@ export default function Dashboard() {
                             </div>
                             <div className="usage-value">
                                 {(openaiCosts?.totalTokens ?? 0).toLocaleString()}
-                                <span className="usage-unit">tokens</span>
+                                <span className="usage-unit">{t.tokens}</span>
                             </div>
                             <div className="cost-display" style={{ marginTop: '0.5rem' }}>
                                 <Euro size={18} />
@@ -596,7 +592,7 @@ export default function Dashboard() {
 
                         <div className="card aggregate-card">
                             <div className="card-title">
-                                <h3>Total Cost</h3>
+                                <h3>{t.totalCost}</h3>
                                 <TrendingUp size={20} color="#f59e0b" />
                             </div>
                             <div className="usage-value" style={{ color: '#f59e0b' }}>
@@ -604,7 +600,7 @@ export default function Dashboard() {
                                 <span className="usage-unit">EUR</span>
                             </div>
                             <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', marginTop: '1rem' }}>
-                                {totalEvents} total events across all sources in last {activeDays} days
+                                {t.totalEventsDesc(totalEvents, activeDays)}
                             </p>
                         </div>
                     </div>
@@ -613,25 +609,25 @@ export default function Dashboard() {
                     <div className="stats-grid" style={{ gridTemplateColumns: 'repeat(2,1fr)', marginBottom: '2rem' }}>
                         <div className="card">
                             <div className="card-title">
-                                <h3 style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}><PdfIcon size={18} /> PDF Pages Processed</h3>
+                                <h3 style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}><PdfIcon size={18} /> {t.pdfPagesProcessed}</h3>
                                 <FileText size={20} color="#6366f1" />
                             </div>
-                            <div className="usage-value">{(infraDocUsage?.pagesSpent ?? 0).toLocaleString()}<span className="usage-unit">pages</span></div>
-                            <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginTop: '0.75rem' }}>Last {activeDays} days</p>
+                            <div className="usage-value">{(infraDocUsage?.pagesSpent ?? 0).toLocaleString()}<span className="usage-unit">{t.pages}</span></div>
+                            <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginTop: '0.75rem' }}>{t.lastNDays(activeDays)}</p>
                         </div>
                         <div className="card">
                             <div className="card-title">
-                                <h3 style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}><ExcelIcon size={18} /> Excel Rows Extracted</h3>
+                                <h3 style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}><ExcelIcon size={18} /> {t.excelRowsExtracted}</h3>
                                 <TrendingUp size={20} color="#ec4899" />
                             </div>
-                            <div className="usage-value">{(infraDocUsage?.rowsUsed ?? 0).toLocaleString()}<span className="usage-unit">rows</span></div>
-                            <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginTop: '0.75rem' }}>Last {activeDays} days</p>
+                            <div className="usage-value">{(infraDocUsage?.rowsUsed ?? 0).toLocaleString()}<span className="usage-unit">{t.rows}</span></div>
+                            <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginTop: '0.75rem' }}>{t.lastNDays(activeDays)}</p>
                         </div>
                     </div>
 
                     {/* Chart */}
                     <div className="chart-section">
-                        <h3 style={{ marginBottom: '1.5rem' }}>Usage Over Time</h3>
+                        <h3 style={{ marginBottom: '1.5rem' }}>{t.usageOverTime}</h3>
                         <div style={{ height: 400 }}>
                             <ResponsiveContainer>
                                 <AreaChart data={chartData}>
@@ -656,16 +652,16 @@ export default function Dashboard() {
 
                     {/* Monthly Usage History */}
                     <div className="card" style={{ marginTop: '2rem' }}>
-                        <h3 style={{ marginBottom: '1.5rem' }}>Monthly Usage History</h3>
+                        <h3 style={{ marginBottom: '1.5rem' }}>{t.monthlyUsageHistory}</h3>
                         {monthlyHistory.length === 0 ? (
-                            <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>No monthly history yet. History is recorded automatically when you reset usage.</p>
+                            <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>{t.noMonthlyHistory}</p>
                         ) : (
                             <table className="monthly-table">
                                 <thead>
                                     <tr>
-                                        <th>Month</th>
-                                        <th>PDF Pages</th>
-                                        <th>Excel Rows</th>
+                                        <th>{t.month}</th>
+                                        <th>{t.pdfPages}</th>
+                                        <th>{t.excelRows}</th>
                                         <th></th>
                                     </tr>
                                 </thead>
@@ -675,7 +671,7 @@ export default function Dashboard() {
                                             <td>{m.monthLabel}</td>
                                             <td>{m.pagesSpent.toLocaleString()}</td>
                                             <td>{m.rowsUsed.toLocaleString()}</td>
-                                            <td>{m.isCurrent && <span className="current-badge">Current</span>}</td>
+                                            <td>{m.isCurrent && <span className="current-badge">{t.current}</span>}</td>
                                         </tr>
                                     ))}
                                 </tbody>
@@ -696,7 +692,7 @@ export default function Dashboard() {
                             marginBottom: '1.5rem', fontSize: '0.9rem'
                         }}>
                             <TrendingUp size={18} />
-                            <span><strong>Agent Paused</strong> — usage limit reached. Go to the Billing tab to resume or purchase add-ons.</span>
+                            <span><strong>{t.agentPaused}</strong>{t.agentPausedDesc}</span>
                         </div>
                     )}
 
@@ -704,7 +700,7 @@ export default function Dashboard() {
                         {/* Pages card */}
                         <div className="card">
                             <div className="card-title">
-                                <h3 style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}><PdfIcon size={18} /> PDF Pages Spent</h3>
+                                <h3 style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}><PdfIcon size={18} /> {t.pdfPagesSpent}</h3>
                                 <FileText size={20} color="#6366f1" />
                             </div>
                             <div className="doc-usage-row">
@@ -724,7 +720,7 @@ export default function Dashboard() {
                             {usageLimits && usageLimits.addonPagesLimit > 0 && (
                                 <div style={{ marginTop: '0.75rem' }}>
                                     <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginBottom: '0.3rem' }}>
-                                        Extra PDF pages (add-on): {usageLimits.addonPagesUsed.toLocaleString()} / {usageLimits.addonPagesLimit.toLocaleString()}
+                                        {t.extraPdfPages} {usageLimits.addonPagesUsed.toLocaleString()} / {usageLimits.addonPagesLimit.toLocaleString()}
                                     </p>
                                     <div className="doc-quota-bar">
                                         <div
@@ -738,14 +734,14 @@ export default function Dashboard() {
                                 </div>
                             )}
                             <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginTop: '0.75rem' }}>
-                                PDF Pages processed in the current billing cycle
+                                {t.pdfPagesBillingCycle}
                             </p>
                         </div>
 
                         {/* Rows card */}
                         <div className="card">
                             <div className="card-title">
-                                <h3 style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}><ExcelIcon size={18} /> Excel Rows Used</h3>
+                                <h3 style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}><ExcelIcon size={18} /> {t.excelRowsUsed}</h3>
                                 <TrendingUp size={20} color="#ec4899" />
                             </div>
                             <div className="doc-usage-row">
@@ -765,7 +761,7 @@ export default function Dashboard() {
                             {usageLimits && usageLimits.addonRowsLimit > 0 && (
                                 <div style={{ marginTop: '0.75rem' }}>
                                     <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginBottom: '0.3rem' }}>
-                                        Extra Excel rows (add-on): {usageLimits.addonRowsUsed.toLocaleString()} / {usageLimits.addonRowsLimit.toLocaleString()}
+                                        {t.extraExcelRows} {usageLimits.addonRowsUsed.toLocaleString()} / {usageLimits.addonRowsLimit.toLocaleString()}
                                     </p>
                                     <div className="doc-quota-bar">
                                         <div
@@ -779,14 +775,14 @@ export default function Dashboard() {
                                 </div>
                             )}
                             <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginTop: '0.75rem' }}>
-                                Excel Rows extracted in the current billing cycle
+                                {t.excelRowsBillingCycle}
                             </p>
                         </div>
                     </div>
 
                     {documentUsage && documentUsage.days.length > 0 && (
                         <div className="card" style={{ marginTop: '1.5rem' }}>
-                            <h3 style={{ marginBottom: '1.5rem' }}>Document Usage Over Time</h3>
+                            <h3 style={{ marginBottom: '1.5rem' }}>{t.documentUsageOverTime}</h3>
                             <div style={{ height: 400 }}>
                                 <ResponsiveContainer>
                                     <AreaChart data={documentUsage.days}>
@@ -816,7 +812,7 @@ export default function Dashboard() {
                 <div className="modal-overlay" onClick={() => setShowSettings(false)}>
                     <div className="modal-content" onClick={(e) => e.stopPropagation()}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
-                            <h3>Integration Settings</h3>
+                            <h3>{t.integrationSettings}</h3>
                             <button onClick={() => setShowSettings(false)} style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer' }}>
                                 <X size={20} />
                             </button>
@@ -824,16 +820,16 @@ export default function Dashboard() {
                         <form onSubmit={handleSaveSettings}>
                             <h4 style={{ marginBottom: '0.75rem', color: '#6366f1' }}>Make.com</h4>
 
-                            <label className="settings-label">API Key</label>
+                            <label className="settings-label">{t.apiKey}</label>
                             <input
                                 type="password"
                                 className="settings-input"
-                                placeholder="Enter Make.com API Key"
+                                placeholder={t.enterMakeApiKey}
                                 value={makeApiKey}
                                 onChange={(e) => setMakeApiKey(e.target.value)}
                             />
 
-                            <label className="settings-label">Organization ID</label>
+                            <label className="settings-label">{t.organizationId}</label>
                             <input
                                 type="text"
                                 className="settings-input"
@@ -842,7 +838,7 @@ export default function Dashboard() {
                                 onChange={(e) => setMakeOrgId(e.target.value)}
                             />
 
-                            <label className="settings-label">Folder ID (optional - filters synced scenarios)</label>
+                            <label className="settings-label">{t.folderId}</label>
                             <input
                                 type="text"
                                 className="settings-input"
@@ -858,7 +854,7 @@ export default function Dashboard() {
                                 className="btn-secondary"
                                 style={{ marginTop: '0.75rem', marginBottom: '1rem' }}
                             >
-                                {testingConnection ? 'Testing...' : 'Test Connection'}
+                                {testingConnection ? t.testingConn : t.testConnection}
                             </button>
 
                             {connectionStatus && (
@@ -878,16 +874,16 @@ export default function Dashboard() {
 
                             <h4 style={{ marginBottom: '0.75rem', color: '#ec4899' }}>Azure OCR</h4>
 
-                            <label className="settings-label">API Key</label>
+                            <label className="settings-label">{t.apiKey}</label>
                             <input
                                 type="password"
                                 className="settings-input"
-                                placeholder="Enter Azure API Key"
+                                placeholder={t.enterAzureApiKey}
                                 value={azureApiKey}
                                 onChange={(e) => setAzureApiKey(e.target.value)}
                             />
 
-                            <label className="settings-label">Endpoint</label>
+                            <label className="settings-label">{t.endpoint}</label>
                             <input
                                 type="text"
                                 className="settings-input"
@@ -903,7 +899,7 @@ export default function Dashboard() {
                                 className="btn-secondary"
                                 style={{ marginTop: '0.75rem', marginBottom: '1rem' }}
                             >
-                                {testingAzureConnection ? 'Testing...' : 'Test Azure Connection'}
+                                {testingAzureConnection ? t.testingConn : t.testAzureConnection}
                             </button>
 
                             {azureConnectionStatus && (
@@ -920,7 +916,7 @@ export default function Dashboard() {
                             )}
 
                             <button type="submit" className="btn-primary" style={{ marginTop: '1.5rem', width: '100%' }}>
-                                Save Settings
+                                {t.saveSettings}
                             </button>
                         </form>
                     </div>

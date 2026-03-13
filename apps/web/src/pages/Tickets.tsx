@@ -1,23 +1,25 @@
 import React, { useState } from 'react';
 import { CheckCircle, HelpCircle } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
-
-const ISSUE_OPTIONS = [
-    { value: 'system_not_working', label: 'System not working' },
-    { value: 'files_issues', label: 'Files issues - missing files, incorrect data, etc.' },
-    { value: 'general_support', label: 'General support' },
-    { value: 'downgrade_cancel', label: 'Downgrade/Cancel subscription' },
-];
+import { useLanguage } from '../context/LanguageContext';
 
 const WEBHOOK_URL = 'https://hook.eu2.make.com/gjavitgyfytqz3qmg97qz3lzp59p1a1q';
 
 export default function Tickets() {
     const { user, activeTenant } = useAuth();
+    const { t } = useLanguage();
     const [selectedIssue, setSelectedIssue] = useState('');
     const [description, setDescription] = useState('');
     const [submitting, setSubmitting] = useState(false);
     const [submitted, setSubmitted] = useState(false);
     const [submitError, setSubmitError] = useState<string | null>(null);
+
+    const ISSUE_OPTIONS = [
+        { value: 'system_not_working', label: t.issueSystemNotWorking },
+        { value: 'files_issues', label: t.issueFilesIssues },
+        { value: 'general_support', label: t.issueGeneralSupport },
+        { value: 'downgrade_cancel', label: t.issueDowngradeCancel },
+    ];
 
     const selectedLabel = ISSUE_OPTIONS.find(o => o.value === selectedIssue)?.label || '-';
 
@@ -46,7 +48,7 @@ export default function Tickets() {
             setSubmitted(true);
         } catch (error) {
             console.error('Failed to submit support request:', error);
-            setSubmitError('Failed to send your request. Please try again.');
+            setSubmitError(t.submitFailed);
         } finally {
             setSubmitting(false);
         }
@@ -63,9 +65,9 @@ export default function Tickets() {
         <div className="support-page">
             <div className="support-header">
                 <div>
-                    <h2>Support</h2>
+                    <h2>{t.support}</h2>
                     <p style={{ color: 'var(--text-muted)', marginTop: '0.5rem' }}>
-                        Get help from our support team
+                        {t.supportSubtitle}
                     </p>
                 </div>
             </div>
@@ -74,10 +76,10 @@ export default function Tickets() {
                 {submitted ? (
                     <div className="success-state">
                         <CheckCircle size={52} color="#10b981" />
-                        <h3>Request Submitted!</h3>
-                        <p>Our support team will review your request and get back to you shortly.</p>
+                        <h3>{t.requestSubmitted}</h3>
+                        <p>{t.requestSubmittedDesc}</p>
                         <button className="btn-primary" onClick={handleReset}>
-                            Submit Another Request
+                            {t.submitAnother}
                         </button>
                     </div>
                 ) : (
@@ -85,7 +87,7 @@ export default function Tickets() {
                         <div className="form-group">
                             <label className="form-label">
                                 <HelpCircle size={18} color="var(--primary)" style={{ flexShrink: 0 }} />
-                                Please choose what you need assistance with
+                                {t.chooseAssistance}
                             </label>
                             <select
                                 className="form-select"
@@ -95,7 +97,7 @@ export default function Tickets() {
                                     setSubmitError(null);
                                 }}
                             >
-                                <option value="">— Select an option —</option>
+                                <option value="">{t.selectOption}</option>
                                 {ISSUE_OPTIONS.map(o => (
                                     <option key={o.value} value={o.value}>{o.label}</option>
                                 ))}
@@ -106,14 +108,14 @@ export default function Tickets() {
                             <>
                                 <div className="form-group">
                                     <label className="form-label">
-                                        Description
-                                        <span className="form-label-hint"> (optional)</span>
+                                        {t.description}
+                                        <span className="form-label-hint"> {t.optional}</span>
                                     </label>
                                     <textarea
                                         className="form-textarea"
                                         value={description}
                                         onChange={(e) => setDescription(e.target.value)}
-                                        placeholder="Describe your issue in more detail..."
+                                        placeholder={t.descPlaceholder}
                                         rows={5}
                                     />
                                 </div>
@@ -129,7 +131,7 @@ export default function Tickets() {
                                     className="btn-primary btn-submit"
                                     disabled={submitting}
                                 >
-                                    {submitting ? 'Submitting...' : 'Submit Request'}
+                                    {submitting ? t.submitting : t.submitRequest}
                                 </button>
                             </>
                         )}

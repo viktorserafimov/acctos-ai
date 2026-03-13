@@ -121,15 +121,18 @@ function AppRoutes() {
 }
 
 import { ErrorBoundary } from './components/ErrorBoundary';
+import { LanguageProvider } from './context/LanguageContext';
 
 function App() {
     return (
         <ErrorBoundary>
-            <BrowserRouter>
-                <AuthProvider>
-                    <AppRoutes />
-                </AuthProvider>
-            </BrowserRouter>
+            <LanguageProvider>
+                <BrowserRouter>
+                    <AuthProvider>
+                        <AppRoutes />
+                    </AuthProvider>
+                </BrowserRouter>
+            </LanguageProvider>
         </ErrorBoundary>
     );
 }

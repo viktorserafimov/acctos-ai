@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
 import { CreditCard, Check, AlertCircle, ExternalLink, FlaskConical } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { useLanguage } from '../context/LanguageContext';
 
 const PdfIcon = ({ size = 16 }: { size?: number }) => (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ flexShrink: 0 }}>
@@ -116,6 +117,7 @@ interface UsageStatus {
 
 export default function Billing() {
     const { isAdmin } = useAuth();
+    const { t } = useLanguage();
     const [usageStatus, setUsageStatus] = useState<UsageStatus | null>(null);
     const [rawUsage, setRawUsage] = useState<{ pages: number; rows: number } | null>(null);
     const [currentTier, setCurrentTier] = useState(2); // Default: Professional plan
@@ -159,6 +161,7 @@ export default function Billing() {
     const formatDate = (iso: string) =>
         new Date(iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
 
+
     if (loading) {
         return <div className="loading-container"><div className="spinner" /></div>;
     }
@@ -189,11 +192,10 @@ export default function Billing() {
                 <div className="pause-banner">
                     <AlertCircle size={20} />
                     <div className="pause-banner-text">
-                        <strong>Your Agent has been paused</strong> — you have reached your usage limit
-                        for this billing period.
+                        <strong>{t.agentPausedBilling}</strong>{t.agentPausedBillingDesc}
                         {isSubscribed
-                            ? ` Your scenarios will auto-resume on ${us?.nextResetAt ? formatDate(us.nextResetAt) : 'the 5th of next month'} when the new period starts.`
-                            : ' Purchase additional pages or rows below to resume, or upgrade your subscription.'
+                            ? t.autoResume(us?.nextResetAt ? formatDate(us.nextResetAt) : '—')
+                            : t.purchaseToResume
                         }
                     </div>
                 </div>
@@ -202,9 +204,9 @@ export default function Billing() {
             {/* Header */}
             <div className="billing-header">
                 <div>
-                    <h2>Billing & Subscription</h2>
+                    <h2>{t.billingTitle}</h2>
                     <p style={{ color: 'var(--text-muted)', marginTop: '0.5rem' }}>
-                        Manage your subscription and monitor usage limits
+                        {t.billingSubtitle}
                     </p>
                 </div>
             </div>
@@ -213,13 +215,13 @@ export default function Billing() {
             <div className="current-plan-card">
                 <div className="current-plan-header">
                     <div>
-                        <h3>Current Period Usage</h3>
+                        <h3>{t.currentPeriodUsage}</h3>
                         <div className="status-badge" data-status="active">
-                            Professional Plan
+                            {t.professionalPlan}
                         </div>
                         {us?.nextResetAt && (
                             <p className="reset-note">
-                                Resets on {formatDate(us.nextResetAt)}
+                                {t.resetsOn(formatDate(us.nextResetAt))}
                             </p>
                         )}
                     </div>
@@ -230,7 +232,7 @@ export default function Billing() {
                     {/* Base pages */}
                     <div className="quota-item">
                         <div className="quota-item-header">
-                            <span className="quota-label" style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}><PdfIcon size={15} /> PDF Pages Used</span>
+                            <span className="quota-label" style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}><PdfIcon size={15} /> {t.pdfPagesUsed}</span>
                             <span className="quota-value">
                                 {curPages.toLocaleString()} / {pagesLimit.toLocaleString()}
                             </span>
@@ -243,7 +245,7 @@ export default function Billing() {
                     {/* Base rows */}
                     <div className="quota-item">
                         <div className="quota-item-header">
-                            <span className="quota-label" style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}><ExcelIcon size={15} /> Excel Rows Used</span>
+                            <span className="quota-label" style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}><ExcelIcon size={15} /> {t.excelRowsUsed2}</span>
                             <span className="quota-value">
                                 {curRows.toLocaleString()} / {rowsLimit.toLocaleString()}
                             </span>
@@ -258,7 +260,7 @@ export default function Billing() {
                 {addonPages > 0 && (
                     <div className="addon-tracker">
                         <div className="addon-tracker-label">
-                            <span style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}><PdfIcon size={13} /> Extra PDF Pages (add-on)</span>
+                            <span style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}><PdfIcon size={13} /> {t.extraPdfPagesAddon}</span>
                             <span>{addonPagesUsed.toLocaleString()} / {addonPages.toLocaleString()}</span>
                         </div>
                         <div className="quota-bar">
@@ -272,7 +274,7 @@ export default function Billing() {
                 {addonRows > 0 && (
                     <div className="addon-tracker">
                         <div className="addon-tracker-label">
-                            <span style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}><ExcelIcon size={13} /> Extra Excel Rows (add-on)</span>
+                            <span style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}><ExcelIcon size={13} /> {t.extraExcelRowsAddon}</span>
                             <span>{addonRowsUsed.toLocaleString()} / {addonRows.toLocaleString()}</span>
                         </div>
                         <div className="quota-bar">
@@ -286,7 +288,7 @@ export default function Billing() {
             </div>
 
             {/* Plans */}
-            <h3 style={{ marginBottom: '1.5rem' }}>Subscription Plans</h3>
+            <h3 style={{ marginBottom: '1.5rem' }}>{t.subscriptionPlans}</h3>
             <div className="plans-grid">
                 {PLANS.map((plan) => {
                     const isCurrentPlan = isSubscribed && plan.tier === currentTier;
@@ -298,17 +300,17 @@ export default function Billing() {
                             className={`plan-card${plan.highlighted ? ' plan-card--highlighted' : ''}${isCurrentPlan ? ' plan-card--current' : ''}`}
                         >
                             {plan.highlighted && !isCurrentPlan && (
-                                <div className="plan-badge">Most Popular</div>
+                                <div className="plan-badge">{t.mostPopular}</div>
                             )}
                             {isCurrentPlan && (
-                                <div className="plan-badge plan-badge--current">Current Plan</div>
+                                <div className="plan-badge plan-badge--current">{t.currentPlan}</div>
                             )}
 
                             <div className="plan-header">
                                 <h4>{plan.name}</h4>
                                 <div className="plan-price">
                                     <span className="price-amount">{plan.priceLabel}</span>
-                                    <span className="price-period">/month</span>
+                                    <span className="price-period">{t.perMonth}</span>
                                 </div>
                             </div>
 
@@ -324,7 +326,7 @@ export default function Billing() {
                             {isCurrentPlan && (
                                 <button disabled className="btn-current-plan">
                                     <Check size={16} />
-                                    Currently chosen plan
+                                    {t.currentlyChosen}
                                 </button>
                             )}
                             {!isCurrentPlan && isLowerTier && (
@@ -336,7 +338,7 @@ export default function Billing() {
                                     onClick={() => setCurrentTier(plan.tier)}
                                 >
                                     <ExternalLink size={16} />
-                                    Downgrade to {plan.name}
+                                    {t.downgradeTo(plan.name)}
                                 </a>
                             )}
                             {!isCurrentPlan && !isLowerTier && (
@@ -348,7 +350,7 @@ export default function Billing() {
                                     onClick={() => setCurrentTier(plan.tier)}
                                 >
                                     <ExternalLink size={16} />
-                                    {isSubscribed ? `Upgrade to ${plan.name}` : `Subscribe — ${plan.priceLabel}/mo`}
+                                    {isSubscribed ? t.upgradeTo(plan.name) : t.subscribeTo(plan.priceLabel)}
                                 </a>
                             )}
                         </div>
@@ -357,14 +359,13 @@ export default function Billing() {
             </div>
 
             <p className="downgrade-notice">
-                If you want to downgrade or cancel your subscription please submit a ticket through the Support tab.
+                {t.downgradeNotice}
             </p>
 
             {/* Add-ons */}
-            <h3 style={{ marginBottom: '1.5rem', marginTop: '2.5rem' }}>Add-ons</h3>
+            <h3 style={{ marginBottom: '1.5rem', marginTop: '2.5rem' }}>{t.addons}</h3>
             <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', marginBottom: '1.5rem', marginTop: '-1rem' }}>
-                Purchase additional capacity as a one-time payment for the current billing period. Scenarios are automatically
-                resumed after a successful payment (requires Stripe webhook configuration).
+                {t.addonsDesc}
             </p>
             <div className="addons-grid">
                 {ADD_ONS.map((addon) => {
@@ -377,7 +378,7 @@ export default function Billing() {
                                     {addon.addonType === 'pages' ? <PdfIcon size={20} /> : <ExcelIcon size={20} />}
                                     {addon.name}
                                 </h4>
-                                <p className="addon-description">{addon.description}</p>
+                                <p className="addon-description">{addon.addonType === 'pages' ? t.addlPdfDesc : t.addlRowsDesc}</p>
                             </div>
 
                             {/* Pill selector */}
@@ -396,7 +397,7 @@ export default function Billing() {
 
                             {/* Summary row */}
                             <div className="addon-summary">
-                                <span className="addon-summary-label">One-time payment</span>
+                                <span className="addon-summary-label">{t.oneTimePayment}</span>
                                 <span className="addon-summary-price">{selected.price}</span>
                             </div>
 
@@ -408,7 +409,7 @@ export default function Billing() {
                                 className="btn-primary addon-purchase-btn"
                             >
                                 <ExternalLink size={16} />
-                                Purchase {selected.label}
+                                {t.purchaseItem(selected.label)}
                             </a>
                         </div>
                     );
@@ -420,18 +421,17 @@ export default function Billing() {
                 <div className="test-section">
                     <div className="test-section-header">
                         <FlaskConical size={18} />
-                        <h3>Test Payments <span className="admin-badge">Admin Only</span></h3>
+                        <h3>{t.testPayments} <span className="admin-badge">{t.adminOnly}</span></h3>
                     </div>
                     <p className="test-section-desc">
-                        Stripe test-mode links — use card <code>4242 4242 4242 4242</code>, any future date, any CVC.
-                        These run through the same webhook flow as live payments so you can verify the full integration end-to-end.
+                        {t.testPaymentsDesc} <code>4242 4242 4242 4242</code>{t.testPaymentsDesc2}
                     </p>
                     <div className="test-payments-grid">
                         {TEST_PAYMENTS.map((tp) => (
                             <div key={tp.id} className="test-payment-card">
                                 <div className="test-payment-info">
                                     <span className={`test-type-badge test-type-badge--${tp.type}`}>
-                                        {tp.type === 'subscription' ? 'Subscription' : 'Add-on'}
+                                        {tp.type === 'subscription' ? t.subscriptionBadge : t.addonBadge}
                                     </span>
                                     <p className="test-payment-label">{tp.label}</p>
                                     <p className="test-payment-desc">{tp.description}</p>
@@ -443,7 +443,7 @@ export default function Billing() {
                                     className="btn-test"
                                 >
                                     <ExternalLink size={14} />
-                                    Open Test Checkout
+                                    {t.openTestCheckout}
                                 </a>
                             </div>
                         ))}

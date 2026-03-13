@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import { useLanguage } from '../context/LanguageContext';
 import { User, Lock, ArrowRight, CheckCircle, Building2, Mail, Eye, EyeOff } from 'lucide-react';
 
 export default function LandingPage() {
@@ -15,6 +16,7 @@ export default function LandingPage() {
     const [loading, setLoading] = useState(false);
     const navigate = useNavigate();
     const { login, register } = useAuth();
+    const { t, language, setLanguage } = useLanguage();
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -28,13 +30,13 @@ export default function LandingPage() {
                 navigate('/dashboard');
             } else {
                 await register(email, password, name, tenantName);
-                setSuccess('Registration successful! Please log in.');
+                setSuccess(t.registrationSuccess);
                 setIsLogin(true);
                 setEmail('');
                 setPassword('');
             }
         } catch (err: any) {
-            setError(err.response?.data?.error?.message || err.response?.data?.error || 'An error occurred');
+            setError(err.response?.data?.error?.message || err.response?.data?.error || t.errorOccurred);
         } finally {
             setLoading(false);
         }
@@ -42,36 +44,51 @@ export default function LandingPage() {
 
     return (
         <div className="landing-container">
+            {/* Language Switcher */}
+            <div className="landing-lang-switcher">
+                <button
+                    className={`lang-btn ${language === 'en' ? 'active' : ''}`}
+                    onClick={() => setLanguage('en')}
+                >EN</button>
+                <span className="lang-divider">|</span>
+                <button
+                    className={`lang-btn ${language === 'bg' ? 'active' : ''}`}
+                    onClick={() => setLanguage('bg')}
+                >BG</button>
+            </div>
+
             <div className="landing-content">
                 <div className="landing-hero">
-                    <div className="brand-badge">Document Intelligence Platform</div>
+                    <div className="brand-badge">{t.landingBadge}</div>
                     <div className="landing-title">
-                        <h1>Acctos AI</h1>
+                        <div>
+                            <h1>Acctos AI</h1>
+                            <p className="powered-by">{t.poweredBy}</p>
+                        </div>
                         <img src="/aiassist_logo.png" alt="Acctos AI" className="landing-logo" />
                     </div>
-                    <p>Your complete dashboard for document processing usage, billing, and support.</p>
-                    <p className="powered-by">Powered by AI Assist BG</p>
+                    <p>{t.landingTagline}</p>
 
                     <div className="feature-list">
                         <div className="feature-item">
                             <CheckCircle size={18} color="var(--primary)" />
-                            <span>Real-time usage monitoring</span>
+                            <span>{t.featureRealTime}</span>
                         </div>
                         <div className="feature-item">
                             <CheckCircle size={18} color="var(--primary)" />
-                            <span>Multi-tenant organization support</span>
+                            <span>{t.featureMultiTenant}</span>
                         </div>
                         <div className="feature-item">
                             <CheckCircle size={18} color="var(--primary)" />
-                            <span>Integrated billing & support</span>
+                            <span>{t.featureBilling}</span>
                         </div>
                     </div>
                 </div>
 
                 <div className="auth-card">
                     <div className="auth-header">
-                        <h2>{isLogin ? 'Welcome Back' : 'Create Account'}</h2>
-                        <p>{isLogin ? 'Sign in to access your dashboard' : 'Sign up to start tracking your usage'}</p>
+                        <h2>{isLogin ? t.welcomeBack : t.createAccount}</h2>
+                        <p>{isLogin ? t.signInSubtitle : t.signUpSubtitle}</p>
                     </div>
 
                     <form onSubmit={handleSubmit} className="auth-form">
@@ -81,12 +98,12 @@ export default function LandingPage() {
                         {!isLogin && (
                             <>
                                 <div className="input-group">
-                                    <label>Your Name</label>
+                                    <label>{t.yourName}</label>
                                     <div className="input-wrapper">
                                         <User size={18} className="input-icon" />
                                         <input
                                             type="text"
-                                            placeholder="John Doe"
+                                            placeholder={t.namePlaceholder}
                                             value={name}
                                             onChange={(e) => setName(e.target.value)}
                                             required={!isLogin}
@@ -95,12 +112,12 @@ export default function LandingPage() {
                                 </div>
 
                                 <div className="input-group">
-                                    <label>Organization Name</label>
+                                    <label>{t.organizationName}</label>
                                     <div className="input-wrapper">
                                         <Building2 size={18} className="input-icon" />
                                         <input
                                             type="text"
-                                            placeholder="Acme Corp"
+                                            placeholder={t.orgPlaceholder}
                                             value={tenantName}
                                             onChange={(e) => setTenantName(e.target.value)}
                                             required={!isLogin}
@@ -111,12 +128,12 @@ export default function LandingPage() {
                         )}
 
                         <div className="input-group">
-                            <label>Email</label>
+                            <label>{t.email}</label>
                             <div className="input-wrapper">
                                 <Mail size={18} className="input-icon" />
                                 <input
                                     type="email"
-                                    placeholder="you@company.com"
+                                    placeholder={t.emailPlaceholder}
                                     value={email}
                                     onChange={(e) => setEmail(e.target.value)}
                                     required
@@ -125,7 +142,7 @@ export default function LandingPage() {
                         </div>
 
                         <div className="input-group">
-                            <label>Password</label>
+                            <label>{t.password}</label>
                             <div className="input-wrapper">
                                 <Lock size={18} className="input-icon" />
                                 <input
@@ -148,15 +165,15 @@ export default function LandingPage() {
                         </div>
 
                         <button type="submit" className="btn-primary" disabled={loading}>
-                            {loading ? 'Processing...' : (isLogin ? 'Sign In' : 'Create Account')}
+                            {loading ? t.processing : (isLogin ? t.signIn : t.createAccount)}
                             <ArrowRight size={18} />
                         </button>
 
                         <div className="auth-footer">
                             <p>
-                                {isLogin ? "Don't have an account?" : 'Already have an account?'}
+                                {isLogin ? t.noAccount : t.haveAccount}
                                 <button type="button" onClick={() => { setIsLogin(!isLogin); setError(''); setSuccess(''); }} className="btn-link">
-                                    {isLogin ? 'Create one now' : 'Sign in instead'}
+                                    {isLogin ? t.createNow : t.signInInstead}
                                 </button>
                             </p>
                         </div>
@@ -165,6 +182,42 @@ export default function LandingPage() {
             </div>
 
             <style>{`
+        .landing-lang-switcher {
+          position: fixed;
+          top: 1.25rem;
+          right: 1.5rem;
+          display: flex;
+          align-items: center;
+          gap: 0.25rem;
+          padding: 0.3rem 0.6rem;
+          background: rgba(255,255,255,0.06);
+          border: 1px solid rgba(255,255,255,0.12);
+          border-radius: 0.65rem;
+          backdrop-filter: blur(8px);
+          z-index: 50;
+        }
+        .lang-btn {
+          background: none;
+          border: none;
+          color: var(--text-muted);
+          cursor: pointer;
+          padding: 0.1rem 0.3rem;
+          border-radius: 0.35rem;
+          font-size: 0.75rem;
+          font-weight: 700;
+          letter-spacing: 0.05em;
+          transition: all 0.15s;
+        }
+        .lang-btn:hover { color: var(--text); }
+        .lang-btn.active {
+          color: var(--primary);
+          background: rgba(99,102,241,0.12);
+        }
+        .lang-divider {
+          color: rgba(255,255,255,0.2);
+          font-size: 0.7rem;
+          user-select: none;
+        }
         .landing-container {
           min-height: 100vh;
           display: flex;
@@ -183,14 +236,17 @@ export default function LandingPage() {
         .landing-title {
           display: flex;
           align-items: center;
-          gap: 0.75rem;
-          margin: 1.5rem 0 0;
+          gap: 0.35rem;
+          margin: 1.5rem 0 1.5rem;
         }
         .landing-logo {
           height: 104px;
           width: auto;
           object-fit: contain;
           flex-shrink: 0;
+          position: relative;
+          top: -8px;
+          left: -8px;
         }
         .landing-hero h1 {
           font-size: 3.5rem;
@@ -203,12 +259,13 @@ export default function LandingPage() {
         .powered-by {
           font-size: 0.85rem;
           color: var(--text-muted);
-          margin: -1rem 0 1.5rem;
+          margin: 0.25rem 0 0;
           letter-spacing: 0.3px;
         }
-        .landing-hero p {
+        .landing-hero > p {
           font-size: 1.1rem;
           color: var(--text-muted);
+          margin-top: 0;
           margin-bottom: 2rem;
         }
         .brand-badge {

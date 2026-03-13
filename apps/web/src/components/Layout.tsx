@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { useAuth } from '../context/AuthContext';
+import { useLanguage } from '../context/LanguageContext';
 import {
     LayoutDashboard,
     CreditCard,
@@ -20,6 +21,7 @@ interface LayoutProps {
 
 export default function Layout({ children }: LayoutProps) {
     const { user, tenants, activeTenant, logout, switchTenant, isAdmin } = useAuth();
+    const { t, language, setLanguage } = useLanguage();
     const [showTenantMenu, setShowTenantMenu] = useState(false);
     const [scenariosPaused, setScenariosPaused] = useState(false);
     const navigate = useNavigate();
@@ -45,7 +47,7 @@ export default function Layout({ children }: LayoutProps) {
     const handleTenantSwitch = async (tenantId: string) => {
         await switchTenant(tenantId);
         setShowTenantMenu(false);
-        window.location.reload(); // Refresh to load new tenant data
+        window.location.reload();
     };
 
     return (
@@ -54,13 +56,30 @@ export default function Layout({ children }: LayoutProps) {
             <header className="header">
                 <div className="brand">
                     <img src="/aiassist_logo.png" alt="Acctos AI" className="brand-logo" />
-                    <div>
+                    <div style={{ marginLeft: '-8px', marginTop: '4px' }}>
                         <h1>Acctos AI</h1>
-                        <p>Powered by AI Assist BG</p>
+                        <p>{t.poweredBy}</p>
                     </div>
                 </div>
 
                 <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                    {/* Language Switcher */}
+                    <div className="lang-switcher">
+                        <button
+                            className={`lang-btn ${language === 'en' ? 'active' : ''}`}
+                            onClick={() => setLanguage('en')}
+                        >
+                            {t.langEn}
+                        </button>
+                        <span className="lang-divider">|</span>
+                        <button
+                            className={`lang-btn ${language === 'bg' ? 'active' : ''}`}
+                            onClick={() => setLanguage('bg')}
+                        >
+                            {t.langBg}
+                        </button>
+                    </div>
+
                     {/* Tenant Switcher */}
                     {tenants.length > 1 && (
                         <div className="tenant-switcher">
@@ -69,7 +88,7 @@ export default function Layout({ children }: LayoutProps) {
                                 onClick={() => setShowTenantMenu(!showTenantMenu)}
                             >
                                 <Building2 size={16} />
-                                <span>{activeTenant?.name || 'Select Tenant'}</span>
+                                <span>{activeTenant?.name || t.selectTenant}</span>
                                 <ChevronDown size={14} />
                             </button>
                             {showTenantMenu && (
@@ -97,7 +116,7 @@ export default function Layout({ children }: LayoutProps) {
                     </div>
 
                     {/* Logout */}
-                    <button className="card btn-icon logout-btn" onClick={handleLogout} title="Logout">
+                    <button className="card btn-icon logout-btn" onClick={handleLogout} title={t.logout}>
                         <LogOut size={18} />
                     </button>
                 </div>
@@ -108,13 +127,13 @@ export default function Layout({ children }: LayoutProps) {
                 <div className="usage-limit-banner">
                     <AlertTriangle size={22} style={{ flexShrink: 0, marginTop: 2 }} />
                     <div className="usage-limit-banner-body">
-                        <strong>You've reached your current usage limit, and your agent has been temporarily paused.</strong>
-                        <p>To resume your agent, please either:</p>
+                        <strong>{t.bannerTitle}</strong>
+                        <p>{t.bannerBody}</p>
                         <ul>
-                            <li>Purchase additional pages/rows on the Billing page, or</li>
-                            <li>Upgrade your subscription plan.</li>
+                            <li>{t.bannerOption1}</li>
+                            <li>{t.bannerOption2}</li>
                         </ul>
-                        <p>Once your limit is increased, your agent will automatically resume.</p>
+                        <p>{t.bannerFooter}</p>
                     </div>
                 </div>
             )}
@@ -125,20 +144,20 @@ export default function Layout({ children }: LayoutProps) {
                 <nav className="sidebar">
                     <NavLink to="/dashboard" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
                         <LayoutDashboard size={20} />
-                        <span>Usage</span>
+                        <span>{t.navUsage}</span>
                     </NavLink>
                     <NavLink to="/billing" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
                         <CreditCard size={20} />
-                        <span>Billing</span>
+                        <span>{t.navBilling}</span>
                     </NavLink>
                     <NavLink to="/tickets" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
                         <HelpCircle size={20} />
-                        <span>Support</span>
+                        <span>{t.navSupport}</span>
                     </NavLink>
                     {isAdmin && (
                         <NavLink to="/users" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
                             <UsersIcon size={20} />
-                            <span>Users</span>
+                            <span>{t.navUsers}</span>
                         </NavLink>
                     )}
                 </nav>
@@ -150,8 +169,43 @@ export default function Layout({ children }: LayoutProps) {
             </div>
 
             <style>{`
-        .brand { display: flex; align-items: center; gap: 0.75rem; }
+        .brand { display: flex; align-items: center; gap: 0.35rem; }
         .brand-logo { height: 96px; width: auto; object-fit: contain; position: relative; top: 6px; }
+
+        .lang-switcher {
+          display: flex;
+          align-items: center;
+          gap: 0.25rem;
+          padding: 0.3rem 0.6rem;
+          background: var(--surface);
+          border: 1px solid var(--glass-border);
+          border-radius: 0.65rem;
+          font-size: 0.75rem;
+          font-weight: 700;
+          letter-spacing: 0.05em;
+        }
+        .lang-btn {
+          background: none;
+          border: none;
+          color: var(--text-muted);
+          cursor: pointer;
+          padding: 0.1rem 0.3rem;
+          border-radius: 0.35rem;
+          font-size: 0.75rem;
+          font-weight: 700;
+          letter-spacing: 0.05em;
+          transition: all 0.15s;
+        }
+        .lang-btn:hover { color: var(--text); }
+        .lang-btn.active {
+          color: var(--primary);
+          background: rgba(99,102,241,0.12);
+        }
+        .lang-divider {
+          color: var(--glass-border);
+          font-size: 0.7rem;
+          user-select: none;
+        }
 
         .usage-limit-banner {
           display: flex;

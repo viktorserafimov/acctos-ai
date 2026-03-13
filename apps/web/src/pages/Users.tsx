@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { UserPlus, Trash2, X, Shield, User as UserIcon } from 'lucide-react';
+import { useLanguage } from '../context/LanguageContext';
 
 interface UserEntry {
     id: string;
@@ -11,12 +12,8 @@ interface UserEntry {
     createdAt: string;
 }
 
-function displayRole(role: string): string {
-    if (role === 'ORG_OWNER' || role === 'ADMIN') return 'Admin';
-    return 'User';
-}
-
 export default function Users() {
+    const { t } = useLanguage();
     const [users, setUsers] = useState<UserEntry[]>([]);
     const [loading, setLoading] = useState(true);
     const [showCreateForm, setShowCreateForm] = useState(false);
@@ -63,7 +60,7 @@ export default function Users() {
             setFormRole('MEMBER');
             await fetchUsers();
         } catch (err: any) {
-            const msg = err.response?.data?.error?.message || err.response?.data?.error || 'Failed to create user';
+            const msg = err.response?.data?.error?.message || err.response?.data?.error || t.createUserFailed;
             setError(msg);
         } finally {
             setCreating(false);
@@ -71,33 +68,54 @@ export default function Users() {
     };
 
     const handleDelete = async (membershipId: string, email: string) => {
-        if (!confirm(`Remove ${email} from this tenant?`)) return;
+        if (!confirm(t.removeConfirm(email))) return;
 
         try {
             await axios.delete(`/v1/users/${membershipId}`);
             await fetchUsers();
         } catch (err: any) {
-            const msg = err.response?.data?.error?.message || 'Failed to remove user';
+            const msg = err.response?.data?.error?.message || t.removeUserFailed;
             alert(msg);
         }
+    };
+
+    const displayRole = (role: string) => {
+        if (role === 'ORG_OWNER' || role === 'ADMIN') return t.admin;
+        return t.user;
     };
 
     if (loading) {
         return (
             <div className="loading-container">
                 <div className="spinner"></div>
-                <p style={{ marginTop: '1rem', color: 'var(--text-muted)' }}>Loading users...</p>
+                <p style={{ marginTop: '1rem', color: 'var(--text-muted)' }}>{t.loadingUsers}</p>
             </div>
         );
     }
 
+    const thStyle: React.CSSProperties = {
+        padding: '1rem 1.25rem',
+        textAlign: 'left',
+        color: 'var(--text-muted)',
+        fontWeight: 600,
+        fontSize: '0.85rem',
+        textTransform: 'uppercase',
+        letterSpacing: '0.05em',
+    };
+
+    const tdStyle: React.CSSProperties = {
+        padding: '0.85rem 1.25rem',
+        color: 'var(--text)',
+        fontSize: '0.95rem',
+    };
+
     return (
         <div>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
-                <h2>Users Management</h2>
+                <h2>{t.usersManagement}</h2>
                 <button className="btn-primary" onClick={() => setShowCreateForm(true)}>
                     <UserPlus size={16} />
-                    Create User
+                    {t.createUser}
                 </button>
             </div>
 
@@ -106,10 +124,10 @@ export default function Users() {
                 <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                     <thead>
                         <tr style={{ borderBottom: '1px solid var(--glass-border)' }}>
-                            <th style={thStyle}>Name</th>
-                            <th style={thStyle}>Email</th>
-                            <th style={thStyle}>Role</th>
-                            <th style={{ ...thStyle, textAlign: 'right' }}>Actions</th>
+                            <th style={thStyle}>{t.name}</th>
+                            <th style={thStyle}>{t.email}</th>
+                            <th style={thStyle}>{t.role}</th>
+                            <th style={{ ...thStyle, textAlign: 'right' }}>{t.actions}</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -142,7 +160,7 @@ export default function Users() {
                                 <td style={{ ...tdStyle, textAlign: 'right' }}>
                                     <button
                                         onClick={() => handleDelete(u.membershipId, u.email)}
-                                        title="Remove user"
+                                        title={t.removeUser}
                                         style={{
                                             background: 'none',
                                             border: 'none',
@@ -160,7 +178,7 @@ export default function Users() {
                         {users.length === 0 && (
                             <tr>
                                 <td colSpan={4} style={{ ...tdStyle, textAlign: 'center', color: 'var(--text-muted)' }}>
-                                    No users found
+                                    {t.noUsersFound}
                                 </td>
                             </tr>
                         )}
@@ -173,7 +191,7 @@ export default function Users() {
                 <div className="modal-overlay" onClick={() => setShowCreateForm(false)}>
                     <div className="modal-content" onClick={(e) => e.stopPropagation()}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
-                            <h3>Create User</h3>
+                            <h3>{t.createUser}</h3>
                             <button onClick={() => setShowCreateForm(false)} style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer' }}>
                                 <X size={20} />
                             </button>
@@ -187,7 +205,7 @@ export default function Users() {
 
                         <form onSubmit={handleCreate}>
                             <div className="form-group">
-                                <label>Email *</label>
+                                <label>{t.emailRequired}</label>
                                 <input
                                     type="email"
                                     value={formEmail}
@@ -197,38 +215,38 @@ export default function Users() {
                                 />
                             </div>
                             <div className="form-group">
-                                <label>Full Name</label>
+                                <label>{t.fullName}</label>
                                 <input
                                     type="text"
                                     value={formName}
                                     onChange={(e) => setFormName(e.target.value)}
-                                    placeholder="John Doe"
+                                    placeholder={t.namePlaceholderUser}
                                 />
                             </div>
                             <div className="form-group">
-                                <label>Password *</label>
+                                <label>{t.passwordRequired}</label>
                                 <input
                                     type="password"
                                     value={formPassword}
                                     onChange={(e) => setFormPassword(e.target.value)}
                                     required
                                     minLength={8}
-                                    placeholder="Minimum 8 characters"
+                                    placeholder={t.minChars}
                                 />
                             </div>
                             <div className="form-group">
-                                <label>Role *</label>
+                                <label>{t.roleRequired}</label>
                                 <select value={formRole} onChange={(e) => setFormRole(e.target.value as 'ADMIN' | 'MEMBER')}>
-                                    <option value="MEMBER">User</option>
-                                    <option value="ADMIN">Admin</option>
+                                    <option value="MEMBER">{t.user}</option>
+                                    <option value="ADMIN">{t.admin}</option>
                                 </select>
                             </div>
                             <div style={{ display: 'flex', gap: '0.75rem', marginTop: '1.5rem' }}>
                                 <button type="submit" className="btn-primary" disabled={creating} style={{ flex: 1 }}>
-                                    {creating ? 'Creating...' : 'Create User'}
+                                    {creating ? t.creating : t.createUser}
                                 </button>
                                 <button type="button" className="btn-secondary" onClick={() => setShowCreateForm(false)} style={{ flex: 1 }}>
-                                    Cancel
+                                    {t.cancel}
                                 </button>
                             </div>
                         </form>
@@ -329,19 +347,3 @@ export default function Users() {
         </div>
     );
 }
-
-const thStyle: React.CSSProperties = {
-    padding: '1rem 1.25rem',
-    textAlign: 'left',
-    color: 'var(--text-muted)',
-    fontWeight: 600,
-    fontSize: '0.85rem',
-    textTransform: 'uppercase',
-    letterSpacing: '0.05em',
-};
-
-const tdStyle: React.CSSProperties = {
-    padding: '0.85rem 1.25rem',
-    color: 'var(--text)',
-    fontSize: '0.95rem',
-};
