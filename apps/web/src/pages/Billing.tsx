@@ -83,14 +83,25 @@ const TEST_PAYMENTS = [
         label: 'Starter Plan — Test Subscribe',
         description: 'Simulates a Starter (£249/mo) subscription purchase',
         stripeLink: 'https://buy.stripe.com/test_28EeVd6CF4p07O7cWgcs800',
-        type: 'subscription',
+        type: 'subscription' as const,
     },
     {
         id: 'test_rows_1000',
         label: '1,000 Excel Rows — Test Add-on',
         description: 'Simulates a 1,000 row add-on one-time payment',
         stripeLink: 'https://buy.stripe.com/test_00wbJ19OR7Bc1pJbSccs801',
-        type: 'addon',
+        type: 'addon' as const,
+        addonType: 'rows' as const,
+        addonQuantity: 1000,
+    },
+    {
+        id: 'test_pages_1000',
+        label: '1,000 PDF Pages — Test Add-on',
+        description: 'Simulates a 1,000 page add-on one-time payment',
+        stripeLink: 'https://buy.stripe.com/8x200kg4CbGya6efYoaZi0l',
+        type: 'addon' as const,
+        addonType: 'pages' as const,
+        addonQuantity: 1000,
     },
 ];
 
@@ -107,6 +118,8 @@ interface UsageStatus {
     addonRowsLimit: number;
     addonPagesUsed: number;
     addonRowsUsed: number;
+    basePagesUsed: number;
+    baseRowsUsed: number;
     totalPagesLimit: number;
     totalRowsLimit: number;
     scenariosPaused: boolean;
@@ -116,7 +129,7 @@ interface UsageStatus {
 }
 
 export default function Billing() {
-    const { isAdmin } = useAuth();
+    const { isAdmin, activeTenant } = useAuth();
     const { t } = useLanguage();
     const [usageStatus, setUsageStatus] = useState<UsageStatus | null>(null);
     const [rawUsage, setRawUsage] = useState<{ pages: number; rows: number } | null>(null);
@@ -149,6 +162,42 @@ export default function Billing() {
             setAdjustPagesMsg({ type: 'error', text: err.response?.data?.error?.message || 'Failed to adjust pages' });
         } finally {
             setAdjustingPages(false);
+        }
+    };
+
+    // Admin simulate addon state
+    const [simulatingId, setSimulatingId] = useState<string | null>(null);
+    const [simulateMsgs, setSimulateMsgs] = useState<Record<string, { type: 'error' | 'success'; text: string }>>({});
+
+    const handleSimulateAddon = async (tp: typeof TEST_PAYMENTS[number]) => {
+        if (tp.type !== 'addon') return;
+        setSimulatingId(tp.id);
+        setSimulateMsgs(prev => ({ ...prev, [tp.id]: undefined as any }));
+        try {
+            await axios.post('/v1/billing/simulate-addon', { addonType: tp.addonType, addonQuantity: tp.addonQuantity });
+            setSimulateMsgs(prev => ({ ...prev, [tp.id]: { type: 'success', text: `+${tp.addonQuantity!.toLocaleString()} ${tp.addonType} credited!` } }));
+            await fetchData();
+        } catch (err: any) {
+            setSimulateMsgs(prev => ({ ...prev, [tp.id]: { type: 'error', text: err.response?.data?.error?.message || 'Simulate failed' } }));
+        } finally {
+            setSimulatingId(null);
+        }
+    };
+
+    const [resettingAddon, setResettingAddon] = useState(false);
+    const [resetAddonMsg, setResetAddonMsg] = useState<{ type: 'error' | 'success'; text: string } | null>(null);
+
+    const handleResetAddonLimits = async () => {
+        setResettingAddon(true);
+        setResetAddonMsg(null);
+        try {
+            await axios.post('/v1/billing/reset-addon-limits');
+            setResetAddonMsg({ type: 'success', text: 'Custom credits reset to 0. Only new Stripe purchases will add credits.' });
+            await fetchData();
+        } catch (err: any) {
+            setResetAddonMsg({ type: 'error', text: err.response?.data?.error?.message || 'Failed to reset custom credits' });
+        } finally {
+            setResettingAddon(false);
         }
     };
 
@@ -213,17 +262,26 @@ export default function Billing() {
     }
 
     const us = usageStatus;
-    const pagesLimit  = us?.pagesLimit  ?? 5000;
-    const rowsLimit   = us?.rowsLimit   ?? 5000;
+    const pagesLimit     = us?.pagesLimit     ?? 5000;
+    const rowsLimit      = us?.rowsLimit      ?? 5000;
+    const addonPages     = us?.addonPagesLimit ?? 0;
+    const addonRows      = us?.addonRowsLimit  ?? 0;
     // Prefer billing-period usage from usage-status — this is the same window
     // the auto-pause logic uses, so the bar turns red exactly when limits trip.
     // Fall back to raw 30-day usage only when usage-status is unavailable.
-    const curPages    = us?.currentPages ?? rawUsage?.pages ?? 0;
-    const curRows     = us?.currentRows  ?? rawUsage?.rows  ?? 0;
-    const isPaused    = us?.scenariosPaused ?? false;
+    const curPages       = us?.currentPages ?? rawUsage?.pages ?? 0;
+    const curRows        = us?.currentRows  ?? rawUsage?.rows  ?? 0;
+    // Purchased add-on is consumed FIRST; base plan fills only after addon is exhausted.
+    const addonPagesUsed = us?.addonPagesUsed ?? (addonPages > 0 ? Math.min(curPages, addonPages) : 0);
+    const addonRowsUsed  = us?.addonRowsUsed  ?? (addonRows  > 0 ? Math.min(curRows,  addonRows)  : 0);
+    const basePagesUsed  = us?.basePagesUsed  ?? Math.max(0, curPages - addonPagesUsed);
+    const baseRowsUsed   = us?.baseRowsUsed   ?? Math.max(0, curRows  - addonRowsUsed);
+    const isPaused       = us?.scenariosPaused ?? false;
 
-    const pagesPct = Math.min(100, pagesLimit > 0 ? (Math.min(curPages, pagesLimit) / pagesLimit) * 100 : 0);
-    const rowsPct  = Math.min(100, rowsLimit  > 0 ? (Math.min(curRows,  rowsLimit)  / rowsLimit)  * 100 : 0);
+    const pagesPct      = Math.min(100, pagesLimit > 0 ? (basePagesUsed  / pagesLimit)  * 100 : 0);
+    const rowsPct       = Math.min(100, rowsLimit  > 0 ? (baseRowsUsed   / rowsLimit)   * 100 : 0);
+    const addonPagesPct = Math.min(100, addonPages > 0 ? (addonPagesUsed / addonPages) * 100 : 0);
+    const addonRowsPct  = Math.min(100, addonRows  > 0 ? (addonRowsUsed  / addonRows)  * 100 : 0);
 
     return (
         <div>
@@ -269,29 +327,51 @@ export default function Billing() {
                 </div>
 
                 <div className="quota-grid">
-                    {/* Base pages */}
+                    {/* PDF Pages — plan bar on top, purchased bar below */}
                     <div className="quota-item">
                         <div className="quota-item-header">
-                            <span className="quota-label" style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}><PdfIcon size={15} /> {t.pdfPagesUsed}</span>
-                            <span className="quota-value">
-                                {curPages.toLocaleString()} / {pagesLimit.toLocaleString()}
+                            <span className="quota-label" style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                                <PdfIcon size={15} />
+                                <span>{t.pdfPagesUsed}</span>
                             </span>
+                            <span className="quota-value">{basePagesUsed.toLocaleString()} / {pagesLimit.toLocaleString()}</span>
                         </div>
                         <div className="quota-bar">
                             <div className="quota-fill" style={{ width: `${pagesPct}%`, background: pagesPct >= 100 ? '#ef4444' : undefined }} />
                         </div>
+                        <div className="quota-item-header" style={{ marginTop: '0.75rem' }}>
+                            <span className="quota-label" style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                                <PdfIcon size={15} />
+                                <span>Custom PDF Pages</span>
+                            </span>
+                            <span className="quota-value">{addonPagesUsed.toLocaleString()} / {addonPages.toLocaleString()}</span>
+                        </div>
+                        <div className="quota-bar">
+                            <div className="quota-fill addon-fill" style={{ width: `${addonPagesPct}%`, background: addonPagesPct >= 100 ? '#ef4444' : undefined }} />
+                        </div>
                     </div>
 
-                    {/* Base rows */}
+                    {/* Excel Rows — plan bar on top, purchased bar below */}
                     <div className="quota-item">
                         <div className="quota-item-header">
-                            <span className="quota-label" style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}><ExcelIcon size={15} /> {t.excelRowsUsed2}</span>
-                            <span className="quota-value">
-                                {curRows.toLocaleString()} / {rowsLimit.toLocaleString()}
+                            <span className="quota-label" style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                                <ExcelIcon size={15} />
+                                <span>{t.excelRowsUsed2}</span>
                             </span>
+                            <span className="quota-value">{baseRowsUsed.toLocaleString()} / {rowsLimit.toLocaleString()}</span>
                         </div>
                         <div className="quota-bar">
                             <div className="quota-fill" style={{ width: `${rowsPct}%`, background: rowsPct >= 100 ? '#ef4444' : undefined }} />
+                        </div>
+                        <div className="quota-item-header" style={{ marginTop: '0.75rem' }}>
+                            <span className="quota-label" style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                                <ExcelIcon size={15} />
+                                <span>Custom Excel Rows</span>
+                            </span>
+                            <span className="quota-value">{addonRowsUsed.toLocaleString()} / {addonRows.toLocaleString()}</span>
+                        </div>
+                        <div className="quota-bar">
+                            <div className="quota-fill addon-fill" style={{ width: `${addonRowsPct}%`, background: addonRowsPct >= 100 ? '#ef4444' : undefined }} />
                         </div>
                     </div>
                 </div>
@@ -437,6 +517,12 @@ export default function Billing() {
                     <p className="test-section-desc">
                         {t.testPaymentsDesc} <code>4242 4242 4242 4242</code>{t.testPaymentsDesc2}
                     </p>
+                    {activeTenant?.id && (
+                        <p className="test-section-desc" style={{ marginBottom: '1rem', marginTop: '-0.5rem' }}>
+                            Tenant ID: <code style={{ userSelect: 'all' }}>{activeTenant.id}</code>
+                            {' — '}this must be set in the Stripe payment link metadata as <code>tenantId</code> for credits to be applied automatically.
+                        </p>
+                    )}
                     <div className="test-payments-grid">
                         {TEST_PAYMENTS.map((tp) => (
                             <div key={tp.id} className="test-payment-card">
@@ -446,16 +532,32 @@ export default function Billing() {
                                     </span>
                                     <p className="test-payment-label">{tp.label}</p>
                                     <p className="test-payment-desc">{tp.description}</p>
+                                    {simulateMsgs[tp.id] && (
+                                        <p style={{ fontSize: '0.78rem', margin: '0.35rem 0 0', color: simulateMsgs[tp.id].type === 'error' ? '#ef4444' : '#22c55e' }}>
+                                            {simulateMsgs[tp.id].text}
+                                        </p>
+                                    )}
                                 </div>
-                                <a
-                                    href={tp.stripeLink}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    className="btn-test"
-                                >
-                                    <ExternalLink size={14} />
-                                    {t.openTestCheckout}
-                                </a>
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', alignItems: 'flex-end' }}>
+                                    {tp.type === 'addon' && (
+                                        <button
+                                            onClick={() => handleSimulateAddon(tp)}
+                                            disabled={simulatingId === tp.id}
+                                            className="btn-simulate"
+                                        >
+                                            {simulatingId === tp.id ? '...' : `+ Credit ${tp.addonQuantity!.toLocaleString()} ${tp.addonType}`}
+                                        </button>
+                                    )}
+                                    <a
+                                        href={`${tp.stripeLink}${activeTenant?.id ? `?client_reference_id=${activeTenant.id}` : ''}`}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="btn-test"
+                                    >
+                                        <ExternalLink size={14} />
+                                        {t.openTestCheckout}
+                                    </a>
+                                </div>
                             </div>
                         ))}
                     </div>
@@ -474,6 +576,27 @@ export default function Billing() {
                     <p className="test-section-desc">
                         Directly add or subtract from the current period's spent pages/rows. Use positive numbers to add usage, negative to remove. Current: <strong style={{ color: 'var(--text)' }}>{curPages.toLocaleString()} pages</strong> / <strong style={{ color: 'var(--text)' }}>{curRows.toLocaleString()} rows</strong>.
                     </p>
+
+                    {(addonPages > 0 || addonRows > 0) && (
+                        <div style={{ marginBottom: '1rem', padding: '0.75rem 1rem', background: 'rgba(245,158,11,0.07)', border: '1px solid rgba(245,158,11,0.25)', borderRadius: '0.75rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '1rem', flexWrap: 'wrap' }}>
+                            <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
+                                Stale custom credits detected: <strong style={{ color: 'var(--text)' }}>{addonPages.toLocaleString()} pages</strong> / <strong style={{ color: 'var(--text)' }}>{addonRows.toLocaleString()} rows</strong>. Reset to clear them.
+                            </span>
+                            {resetAddonMsg && (
+                                <span style={{ fontSize: '0.82rem', color: resetAddonMsg.type === 'error' ? '#ef4444' : '#22c55e' }}>{resetAddonMsg.text}</span>
+                            )}
+                            <button
+                                onClick={handleResetAddonLimits}
+                                disabled={resettingAddon}
+                                style={{ padding: '0.45rem 1rem', background: 'rgba(245,158,11,0.12)', border: '1px solid rgba(245,158,11,0.4)', borderRadius: '0.6rem', color: '#f59e0b', fontWeight: 600, fontSize: '0.82rem', cursor: 'pointer', whiteSpace: 'nowrap', opacity: resettingAddon ? 0.6 : 1 }}
+                            >
+                                {resettingAddon ? 'Resetting...' : 'Reset Custom Credits to 0'}
+                            </button>
+                        </div>
+                    )}
+                    {resetAddonMsg && addonPages === 0 && addonRows === 0 && (
+                        <div style={{ marginBottom: '1rem', fontSize: '0.82rem', color: '#22c55e' }}>{resetAddonMsg.text}</div>
+                    )}
 
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
                         {/* Pages card */}
@@ -943,6 +1066,26 @@ export default function Billing() {
           background: rgba(245, 158, 11, 0.18);
           box-shadow: 0 4px 14px rgba(245, 158, 11, 0.2);
         }
+        .btn-simulate {
+          display: flex;
+          align-items: center;
+          gap: 0.4rem;
+          padding: 0.55rem 1rem;
+          background: rgba(16, 185, 129, 0.1);
+          border: 1px solid rgba(16, 185, 129, 0.4);
+          border-radius: 0.75rem;
+          color: #10b981;
+          font-size: 0.82rem;
+          font-weight: 600;
+          cursor: pointer;
+          white-space: nowrap;
+          transition: all 0.2s;
+        }
+        .btn-simulate:hover {
+          background: rgba(16, 185, 129, 0.18);
+          box-shadow: 0 4px 14px rgba(16, 185, 129, 0.2);
+        }
+        .btn-simulate:disabled { opacity: 0.5; cursor: default; }
         .adjust-section {
           margin-top: 2rem;
           padding: 1.75rem 2rem;

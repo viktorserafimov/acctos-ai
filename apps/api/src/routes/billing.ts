@@ -271,9 +271,28 @@ router.get('/usage-status', async (req: AuthenticatedRequest, res: Response, nex
         const totalPages     = pagesLimit + addonPages;
         const totalRows      = rowsLimit  + addonRows;
 
-        // Add-on usage = overflow beyond the base quota
-        const addonPagesUsed = Math.max(0, usage.pages - pagesLimit);
-        const addonRowsUsed  = Math.max(0, usage.rows  - rowsLimit);
+        // Purchased add-on is consumed FIRST; base plan fills only after addon is exhausted.
+        // When no addon exists, all usage goes against the base plan.
+        const addonPagesUsed = addonPages > 0 ? Math.min(usage.pages, addonPages) : 0;
+        const addonRowsUsed  = addonRows  > 0 ? Math.min(usage.rows,  addonRows)  : 0;
+        const basePagesUsed  = Math.max(0, usage.pages - addonPagesUsed);
+        const baseRowsUsed   = Math.max(0, usage.rows  - addonRowsUsed);
+
+        // Auto-reset addon credits when they are fully exhausted
+        const pagesAddonExhausted = addonPages > 0 && addonPagesUsed >= addonPages;
+        const rowsAddonExhausted  = addonRows  > 0 && addonRowsUsed  >= addonRows;
+        if (pagesAddonExhausted || rowsAddonExhausted) {
+            const resetData: any = {};
+            if (pagesAddonExhausted) resetData.addonPagesLimit = 0;
+            if (rowsAddonExhausted)  resetData.addonRowsLimit  = 0;
+            try {
+                await (prisma.tenant as any).update({ where: { id: tenantId }, data: resetData });
+                if (pagesAddonExhausted) tenant.addonPagesLimit = 0;
+                if (rowsAddonExhausted)  tenant.addonRowsLimit  = 0;
+            } catch (e: any) {
+                console.warn('[usage-status] Auto-reset addon credits failed:', e.message?.split('\n')[0]);
+            }
+        }
 
         const subscription = await prisma.subscription.findUnique({ where: { tenantId } });
 
@@ -314,6 +333,8 @@ router.get('/usage-status', async (req: AuthenticatedRequest, res: Response, nex
             addonRowsLimit:   addonRows,
             addonPagesUsed,
             addonRowsUsed,
+            basePagesUsed,
+            baseRowsUsed,
             totalPagesLimit:  totalPages,
             totalRowsLimit:   totalRows,
             scenariosPaused:  tenant.scenariosPaused ?? false,
@@ -367,7 +388,8 @@ router.post('/stripe-webhook', async (req: Request, res: Response, next: NextFun
         if (event.type === 'checkout.session.completed') {
             const session = event.data.object;
             const meta    = session.metadata || {};
-            const tenantId      = meta.tenantId as string | undefined;
+            // tenantId can come from metadata (payment links) or client_reference_id (dynamic links)
+            const tenantId      = (meta.tenantId || (session as any).client_reference_id) as string | undefined;
             const addonType     = meta.addonType as 'pages' | 'rows' | undefined;
             const addonQuantity = meta.addonQuantity ? parseInt(meta.addonQuantity) : 0;
 
@@ -419,6 +441,36 @@ router.post('/webhooks', async (req: AuthenticatedRequest, res: Response, next: 
         next(error);
     }
 });
+
+/**
+ * POST /v1/billing/reset-addon-limits
+ *
+ * Admin-only. Resets addonPagesLimit and addonRowsLimit to 0 for this tenant.
+ * Used to clear stale values left from previous systems.
+ */
+router.post(
+    '/reset-addon-limits',
+    requireRole('ORG_OWNER', 'ADMIN'),
+    async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+        try {
+            const prisma: PrismaClient = req.app.locals.prisma;
+            const tenantId = req.user!.tenantId;
+
+            if (!tenantId) {
+                return next(createError('No tenant selected', 400, 'NO_TENANT'));
+            }
+
+            await (prisma.tenant as any).update({
+                where: { id: tenantId },
+                data: { addonPagesLimit: 0, addonRowsLimit: 0 },
+            });
+
+            res.json({ success: true, addonPagesLimit: 0, addonRowsLimit: 0 });
+        } catch (error) {
+            next(error);
+        }
+    }
+);
 
 /**
  * PUT /v1/billing/adjust-credits
@@ -481,6 +533,62 @@ router.put(
             } catch (_) {}
 
             res.json({ success: true, currentPages: newUsage.pages, currentRows: newUsage.rows });
+        } catch (error) {
+            next(error);
+        }
+    }
+);
+
+/**
+ * POST /v1/billing/simulate-addon
+ *
+ * Admin-only. Runs the same credit logic as the Stripe webhook without
+ * requiring an actual Stripe event. Used for testing add-on purchases.
+ *
+ * Body: { addonType: 'pages' | 'rows', addonQuantity: number }
+ */
+router.post(
+    '/simulate-addon',
+    requireRole('ORG_OWNER', 'ADMIN'),
+    async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+        try {
+            const prisma: PrismaClient = req.app.locals.prisma;
+            const tenantId = req.user!.tenantId;
+
+            if (!tenantId) {
+                return next(createError('No tenant selected', 400, 'NO_TENANT'));
+            }
+
+            const { addonType, addonQuantity } = req.body as { addonType?: string; addonQuantity?: number };
+
+            if ((addonType !== 'pages' && addonType !== 'rows') || !addonQuantity || addonQuantity <= 0) {
+                return next(createError('Provide addonType ("pages" or "rows") and a positive addonQuantity', 400, 'VALIDATION_ERROR'));
+            }
+
+            const updateData: any = {};
+            if (addonType === 'pages') {
+                const current = await (prisma.tenant as any).findUnique({
+                    where: { id: tenantId }, select: { addonPagesLimit: true },
+                });
+                updateData.addonPagesLimit = (current?.addonPagesLimit ?? 0) + addonQuantity;
+            } else {
+                const current = await (prisma.tenant as any).findUnique({
+                    where: { id: tenantId }, select: { addonRowsLimit: true },
+                });
+                updateData.addonRowsLimit = (current?.addonRowsLimit ?? 0) + addonQuantity;
+            }
+
+            await (prisma.tenant as any).update({ where: { id: tenantId }, data: updateData });
+
+            // Auto-resume scenarios if the new quota brings usage within limits
+            try {
+                await checkAndResumeIfPossible(prisma, tenantId);
+            } catch (e) {
+                console.warn('[Simulate Addon] Auto-resume check failed:', e);
+            }
+
+            console.log(`[Simulate Addon] tenant=${tenantId}, type=${addonType}, qty=${addonQuantity}`);
+            res.json({ success: true, addonType, addonQuantity, ...updateData });
         } catch (error) {
             next(error);
         }
