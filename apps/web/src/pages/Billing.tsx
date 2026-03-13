@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
-import { CreditCard, Check, AlertCircle, ExternalLink, FlaskConical } from 'lucide-react';
+import { CreditCard, Check, AlertCircle, ExternalLink, FlaskConical, SlidersHorizontal } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useLanguage } from '../context/LanguageContext';
 
@@ -124,6 +124,52 @@ export default function Billing() {
     const [loading, setLoading] = useState(true);
     const [addonSelection, setAddonSelection] = useState<Record<string, number>>({ custom_pages: 0, custom_rows: 0 });
 
+    // Admin adjust-credits state (pages)
+    const [adjustPages, setAdjustPages] = useState('');
+    const [adjustingPages, setAdjustingPages] = useState(false);
+    const [adjustPagesMsg, setAdjustPagesMsg] = useState<{ type: 'error' | 'success'; text: string } | null>(null);
+
+    // Admin adjust-credits state (rows)
+    const [adjustRows, setAdjustRows] = useState('');
+    const [adjustingRows, setAdjustingRows] = useState(false);
+    const [adjustRowsMsg, setAdjustRowsMsg] = useState<{ type: 'error' | 'success'; text: string } | null>(null);
+
+    const handleAdjustPages = async (e: React.FormEvent) => {
+        e.preventDefault();
+        const pages = adjustPages !== '' ? parseInt(adjustPages) : undefined;
+        if (pages === undefined || isNaN(pages)) return;
+        setAdjustingPages(true);
+        setAdjustPagesMsg(null);
+        try {
+            const res = await axios.put('/v1/billing/adjust-credits', { pages });
+            setAdjustPagesMsg({ type: 'success', text: `Done — PDF pages now: ${res.data.currentPages.toLocaleString()}` });
+            setAdjustPages('');
+            await fetchData();
+        } catch (err: any) {
+            setAdjustPagesMsg({ type: 'error', text: err.response?.data?.error?.message || 'Failed to adjust pages' });
+        } finally {
+            setAdjustingPages(false);
+        }
+    };
+
+    const handleAdjustRows = async (e: React.FormEvent) => {
+        e.preventDefault();
+        const rows = adjustRows !== '' ? parseInt(adjustRows) : undefined;
+        if (rows === undefined || isNaN(rows)) return;
+        setAdjustingRows(true);
+        setAdjustRowsMsg(null);
+        try {
+            const res = await axios.put('/v1/billing/adjust-credits', { rows });
+            setAdjustRowsMsg({ type: 'success', text: `Done — Excel rows now: ${res.data.currentRows.toLocaleString()}` });
+            setAdjustRows('');
+            await fetchData();
+        } catch (err: any) {
+            setAdjustRowsMsg({ type: 'error', text: err.response?.data?.error?.message || 'Failed to adjust rows' });
+        } finally {
+            setAdjustingRows(false);
+        }
+    };
+
     const fetchData = useCallback(async () => {
         try {
             const [statusRes, rawRes, subRes] = await Promise.allSettled([
@@ -169,21 +215,15 @@ export default function Billing() {
     const us = usageStatus;
     const pagesLimit  = us?.pagesLimit  ?? 5000;
     const rowsLimit   = us?.rowsLimit   ?? 5000;
-    const addonPages  = us?.addonPagesLimit ?? 0;
-    const addonRows   = us?.addonRowsLimit  ?? 0;
     // Prefer billing-period usage from usage-status — this is the same window
     // the auto-pause logic uses, so the bar turns red exactly when limits trip.
     // Fall back to raw 30-day usage only when usage-status is unavailable.
     const curPages    = us?.currentPages ?? rawUsage?.pages ?? 0;
     const curRows     = us?.currentRows  ?? rawUsage?.rows  ?? 0;
-    const addonPagesUsed = us?.addonPagesUsed ?? 0;
-    const addonRowsUsed  = us?.addonRowsUsed  ?? 0;
     const isPaused    = us?.scenariosPaused ?? false;
 
     const pagesPct = Math.min(100, pagesLimit > 0 ? (Math.min(curPages, pagesLimit) / pagesLimit) * 100 : 0);
     const rowsPct  = Math.min(100, rowsLimit  > 0 ? (Math.min(curRows,  rowsLimit)  / rowsLimit)  * 100 : 0);
-    const addonPagesPct = Math.min(100, addonPages > 0 ? (addonPagesUsed / addonPages) * 100 : 0);
-    const addonRowsPct  = Math.min(100, addonRows  > 0 ? (addonRowsUsed  / addonRows)  * 100 : 0);
 
     return (
         <div>
@@ -256,35 +296,6 @@ export default function Billing() {
                     </div>
                 </div>
 
-                {/* Add-on trackers — only shown when add-ons have been purchased */}
-                {addonPages > 0 && (
-                    <div className="addon-tracker">
-                        <div className="addon-tracker-label">
-                            <span style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}><PdfIcon size={13} /> {t.extraPdfPagesAddon}</span>
-                            <span>{addonPagesUsed.toLocaleString()} / {addonPages.toLocaleString()}</span>
-                        </div>
-                        <div className="quota-bar">
-                            <div
-                                className="quota-fill addon-fill"
-                                style={{ width: `${addonPagesPct}%`, background: addonPagesPct >= 100 ? '#ef4444' : undefined }}
-                            />
-                        </div>
-                    </div>
-                )}
-                {addonRows > 0 && (
-                    <div className="addon-tracker">
-                        <div className="addon-tracker-label">
-                            <span style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}><ExcelIcon size={13} /> {t.extraExcelRowsAddon}</span>
-                            <span>{addonRowsUsed.toLocaleString()} / {addonRows.toLocaleString()}</span>
-                        </div>
-                        <div className="quota-bar">
-                            <div
-                                className="addon-fill quota-fill"
-                                style={{ width: `${addonRowsPct}%`, background: addonRowsPct >= 100 ? '#ef4444' : undefined }}
-                            />
-                        </div>
-                    </div>
-                )}
             </div>
 
             {/* Plans */}
@@ -447,6 +458,81 @@ export default function Billing() {
                                 </a>
                             </div>
                         ))}
+                    </div>
+                </div>
+            )}
+
+            {/* Admin-only adjust usage section */}
+            {isAdmin && (
+                <div className="adjust-section">
+                    <div className="test-section-header" style={{ color: 'var(--primary)' }}>
+                        <SlidersHorizontal size={18} />
+                        <h3 style={{ color: 'var(--primary)' }}>
+                            Adjust Usage <span className="admin-badge">Admin Only</span>
+                        </h3>
+                    </div>
+                    <p className="test-section-desc">
+                        Directly add or subtract from the current period's spent pages/rows. Use positive numbers to add usage, negative to remove. Current: <strong style={{ color: 'var(--text)' }}>{curPages.toLocaleString()} pages</strong> / <strong style={{ color: 'var(--text)' }}>{curRows.toLocaleString()} rows</strong>.
+                    </p>
+
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                        {/* Pages card */}
+                        <div style={{ padding: '1.25rem', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--glass-border)', borderRadius: '1rem' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.75rem' }}>
+                                <PdfIcon size={16} />
+                                <span style={{ fontWeight: 600, fontSize: '0.9rem' }}>PDF Pages</span>
+                            </div>
+                            {adjustPagesMsg && (
+                                <div style={{ padding: '0.5rem 0.75rem', marginBottom: '0.75rem', background: adjustPagesMsg.type === 'error' ? 'rgba(239,68,68,0.1)' : 'rgba(34,197,94,0.1)', border: `1px solid ${adjustPagesMsg.type === 'error' ? 'rgba(239,68,68,0.3)' : 'rgba(34,197,94,0.3)'}`, borderRadius: '0.5rem', color: adjustPagesMsg.type === 'error' ? '#ef4444' : '#22c55e', fontSize: '0.82rem' }}>
+                                    {adjustPagesMsg.text}
+                                </div>
+                            )}
+                            <form onSubmit={handleAdjustPages} style={{ display: 'flex', gap: '0.5rem' }}>
+                                <input
+                                    type="number"
+                                    value={adjustPages}
+                                    onChange={(e) => setAdjustPages(e.target.value)}
+                                    placeholder="e.g. 500 or -200"
+                                    style={{ flex: 1, padding: '0.55rem 0.8rem', background: 'rgba(255,255,255,0.05)', border: '1px solid var(--glass-border)', borderRadius: '0.6rem', color: 'var(--text)', fontSize: '0.9rem', outline: 'none' }}
+                                />
+                                <button
+                                    type="submit"
+                                    disabled={adjustingPages || adjustPages === ''}
+                                    style={{ padding: '0.55rem 1rem', background: 'linear-gradient(135deg, var(--primary), var(--secondary))', border: 'none', borderRadius: '0.6rem', color: 'white', fontWeight: 600, fontSize: '0.85rem', cursor: 'pointer', opacity: adjustingPages || adjustPages === '' ? 0.5 : 1, whiteSpace: 'nowrap' }}
+                                >
+                                    {adjustingPages ? '...' : 'Apply'}
+                                </button>
+                            </form>
+                        </div>
+
+                        {/* Rows card */}
+                        <div style={{ padding: '1.25rem', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--glass-border)', borderRadius: '1rem' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.75rem' }}>
+                                <ExcelIcon size={16} />
+                                <span style={{ fontWeight: 600, fontSize: '0.9rem' }}>Excel Rows</span>
+                            </div>
+                            {adjustRowsMsg && (
+                                <div style={{ padding: '0.5rem 0.75rem', marginBottom: '0.75rem', background: adjustRowsMsg.type === 'error' ? 'rgba(239,68,68,0.1)' : 'rgba(34,197,94,0.1)', border: `1px solid ${adjustRowsMsg.type === 'error' ? 'rgba(239,68,68,0.3)' : 'rgba(34,197,94,0.3)'}`, borderRadius: '0.5rem', color: adjustRowsMsg.type === 'error' ? '#ef4444' : '#22c55e', fontSize: '0.82rem' }}>
+                                    {adjustRowsMsg.text}
+                                </div>
+                            )}
+                            <form onSubmit={handleAdjustRows} style={{ display: 'flex', gap: '0.5rem' }}>
+                                <input
+                                    type="number"
+                                    value={adjustRows}
+                                    onChange={(e) => setAdjustRows(e.target.value)}
+                                    placeholder="e.g. 1000 or -500"
+                                    style={{ flex: 1, padding: '0.55rem 0.8rem', background: 'rgba(255,255,255,0.05)', border: '1px solid var(--glass-border)', borderRadius: '0.6rem', color: 'var(--text)', fontSize: '0.9rem', outline: 'none' }}
+                                />
+                                <button
+                                    type="submit"
+                                    disabled={adjustingRows || adjustRows === ''}
+                                    style={{ padding: '0.55rem 1rem', background: 'linear-gradient(135deg, var(--primary), var(--secondary))', border: 'none', borderRadius: '0.6rem', color: 'white', fontWeight: 600, fontSize: '0.85rem', cursor: 'pointer', opacity: adjustingRows || adjustRows === '' ? 0.5 : 1, whiteSpace: 'nowrap' }}
+                                >
+                                    {adjustingRows ? '...' : 'Apply'}
+                                </button>
+                            </form>
+                        </div>
                     </div>
                 </div>
             )}
@@ -856,6 +942,19 @@ export default function Billing() {
         .btn-test:hover {
           background: rgba(245, 158, 11, 0.18);
           box-shadow: 0 4px 14px rgba(245, 158, 11, 0.2);
+        }
+        .adjust-section {
+          margin-top: 2rem;
+          padding: 1.75rem 2rem;
+          background: rgba(99, 102, 241, 0.04);
+          backdrop-filter: blur(12px);
+          -webkit-backdrop-filter: blur(12px);
+          border: 1px dashed rgba(99, 102, 241, 0.35);
+          border-radius: 1.5rem;
+        }
+        .adjust-section input:focus {
+          border-color: var(--primary);
+          box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.15);
         }
       `}</style>
         </div>

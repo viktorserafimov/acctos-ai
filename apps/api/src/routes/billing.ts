@@ -421,6 +421,73 @@ router.post('/webhooks', async (req: AuthenticatedRequest, res: Response, next: 
 });
 
 /**
+ * PUT /v1/billing/adjust-credits
+ *
+ * Admin-only. Add or remove spent pages/rows for this tenant by injecting a
+ * correction record into DocumentUsageAggregate for today.
+ * Accepts { pages?: number, rows?: number } as deltas (positive = add, negative = remove).
+ * The total current-period usage is clamped to >= 0.
+ */
+router.put(
+    '/adjust-credits',
+    requireRole('ORG_OWNER', 'ADMIN'),
+    async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+        try {
+            const prisma: PrismaClient = req.app.locals.prisma;
+            const tenantId = req.user!.tenantId;
+
+            if (!tenantId) {
+                return next(createError('No tenant selected', 400, 'NO_TENANT'));
+            }
+
+            const { pages, rows } = req.body as { pages?: number; rows?: number };
+
+            if (pages === undefined && rows === undefined) {
+                return next(createError('Provide pages and/or rows delta', 400, 'VALIDATION_ERROR'));
+            }
+
+            // Determine current billing period start
+            const tenant = await (prisma.tenant as any).findUnique({
+                where: { id: tenantId },
+                select: { lastResetAt: true },
+            });
+            const periodStart = tenant?.lastResetAt
+                ? (() => { const d = new Date(tenant.lastResetAt); d.setUTCHours(0, 0, 0, 0); return d; })()
+                : getExpectedResetDate();
+
+            // Get current usage so we can clamp the delta
+            const currentUsage = await getCurrentPeriodUsage(prisma as any, tenantId, periodStart);
+
+            const pagesDelta = pages !== undefined ? Math.max(-currentUsage.pages, pages) : 0;
+            const rowsDelta  = rows  !== undefined ? Math.max(-currentUsage.rows,  rows)  : 0;
+
+            // Upsert today's correction into DocumentUsageAggregate
+            const today = new Date();
+            today.setUTCHours(0, 0, 0, 0);
+
+            await prisma.documentUsageAggregate.upsert({
+                where: { customerId_date: { customerId: tenantId, date: today } },
+                create: { customerId: tenantId, date: today, pagesSpent: pagesDelta, rowsUsed: rowsDelta },
+                update: {
+                    pagesSpent: { increment: pagesDelta },
+                    rowsUsed:   { increment: rowsDelta },
+                },
+            });
+
+            // Recalculate usage after adjustment and check pause/resume
+            const newUsage = await getCurrentPeriodUsage(prisma as any, tenantId, periodStart);
+            try {
+                await checkAndResumeIfPossible(prisma as any, tenantId);
+            } catch (_) {}
+
+            res.json({ success: true, currentPages: newUsage.pages, currentRows: newUsage.rows });
+        } catch (error) {
+            next(error);
+        }
+    }
+);
+
+/**
  * POST /v1/billing/reset-usage
  *
  * Admin-only. Deletes ALL DocumentUsageEvent and DocumentUsageAggregate
