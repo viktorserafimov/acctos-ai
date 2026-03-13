@@ -340,4 +340,73 @@ router.get('/openai-costs', requireRole(...ADMIN_ROLES), async (req: Authenticat
     }
 });
 
+/**
+ * GET /v1/usage/monthly-history
+ *
+ * Returns permanent monthly usage snapshots + current live month data.
+ * Admin only.
+ */
+router.get('/monthly-history', requireRole(...ADMIN_ROLES), async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+    try {
+        const prisma: PrismaClient = req.app.locals.prisma;
+        const tenantId = req.user!.tenantId;
+
+        if (!tenantId) {
+            return next(createError('No tenant selected', 400, 'NO_TENANT'));
+        }
+
+        const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June',
+            'July', 'August', 'September', 'October', 'November', 'December'];
+
+        // Get all saved snapshots
+        const snapshots = await (prisma as any).monthlyUsageSnapshot.findMany({
+            where: { tenantId },
+            orderBy: [{ year: 'asc' }, { month: 'asc' }],
+        });
+
+        // Get current month live data from aggregate
+        const now = new Date();
+        const currentYear = now.getUTCFullYear();
+        const currentMonth = now.getUTCMonth() + 1;
+        const currentMonthStart = new Date(Date.UTC(currentYear, now.getUTCMonth(), 1));
+
+        const currentAgg = await prisma.documentUsageAggregate.aggregate({
+            where: { customerId: tenantId, date: { gte: currentMonthStart } },
+            _sum: { pagesSpent: true, rowsUsed: true },
+        });
+
+        const months = snapshots.map((s: any) => ({
+            year: s.year,
+            month: s.month,
+            monthLabel: `${MONTH_NAMES[s.month - 1]} ${s.year}`,
+            pagesSpent: s.pagesSpent,
+            rowsUsed: s.rowsUsed,
+            isCurrent: s.year === currentYear && s.month === currentMonth,
+        }));
+
+        // Add or update current month entry
+        const currentMonthEntry = {
+            year: currentYear,
+            month: currentMonth,
+            monthLabel: `${MONTH_NAMES[currentMonth - 1]} ${currentYear}`,
+            pagesSpent: currentAgg._sum.pagesSpent ?? 0,
+            rowsUsed: currentAgg._sum.rowsUsed ?? 0,
+            isCurrent: true,
+        };
+        const existingIdx = months.findIndex((m: any) => m.year === currentYear && m.month === currentMonth);
+        if (existingIdx >= 0) {
+            months[existingIdx] = currentMonthEntry;
+        } else {
+            months.push(currentMonthEntry);
+        }
+
+        // Sort most recent first
+        months.sort((a: any, b: any) => b.year !== a.year ? b.year - a.year : b.month - a.month);
+
+        res.json({ months });
+    } catch (error) {
+        next(error);
+    }
+});
+
 export { router as usageRouter };

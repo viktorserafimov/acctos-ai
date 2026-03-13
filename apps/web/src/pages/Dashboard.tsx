@@ -61,7 +61,13 @@ export default function Dashboard() {
     type OpenAICostData = { inputTokens: number; outputTokens: number; totalTokens: number; costEur: string };
     const [openaiCostsMap, setOpenaiCostsMap] = useState<Record<string, OpenAICostData>>({});
     const [loading, setLoading] = useState(true);
-    const [period, setPeriod] = useState('30d');
+    const [filterMode, setFilterMode] = useState<'7d' | '30d' | 'custom'>('30d');
+    const [customDays, setCustomDays] = useState('');
+    const [customDaysError, setCustomDaysError] = useState('');
+    const [activeDays, setActiveDays] = useState(30);
+    const [infraDocUsage, setInfraDocUsage] = useState<{ pagesSpent: number; rowsUsed: number } | null>(null);
+    type MonthlyEntry = { year: number; month: number; monthLabel: string; pagesSpent: number; rowsUsed: number; isCurrent: boolean };
+    const [monthlyHistory, setMonthlyHistory] = useState<MonthlyEntry[]>([]);
 
     // Settings State
     const [showSettings, setShowSettings] = useState(false);
@@ -90,21 +96,24 @@ export default function Dashboard() {
     } | null>(null);
 
     // 2. Helper Functions
-    const fetchData = async () => {
+    const fetchData = async (days = activeDays) => {
         setLoading(true);
         try {
-            console.log('Fetching dashboard data for period:', period);
-            const days = period.replace('d', '');
-            const [summaryRes, timeseriesRes] = await Promise.allSettled([
-                axios.get(`/v1/usage/summary?period=${period}`),
+            const toDate = new Date();
+            const fromDate = new Date();
+            fromDate.setDate(toDate.getDate() - days);
+            const from = fromDate.toISOString().split('T')[0];
+            const to = toDate.toISOString().split('T')[0];
+
+            const [summaryRes, timeseriesRes, infraDocRes] = await Promise.allSettled([
+                axios.get(`/v1/usage/summary?period=${days}d`),
                 axios.get(`/v1/usage/timeseries?days=${days}`),
+                axios.get('/v1/usage/document-usage', { params: { from, to } }),
             ]);
-            if (summaryRes.status === 'fulfilled') {
-                console.log('Dashboard data received:', summaryRes.value.data);
-                setSummary(summaryRes.value.data);
-            }
-            if (timeseriesRes.status === 'fulfilled') {
-                setTimeseries(timeseriesRes.value.data.data);
+            if (summaryRes.status === 'fulfilled') setSummary(summaryRes.value.data);
+            if (timeseriesRes.status === 'fulfilled') setTimeseries(timeseriesRes.value.data.data);
+            if (infraDocRes.status === 'fulfilled') {
+                setInfraDocUsage(infraDocRes.value.data.totals);
             }
         } catch (error) {
             console.error('Failed to fetch usage data:', error);
@@ -113,35 +122,29 @@ export default function Dashboard() {
         }
     };
 
-    // Fetches OpenAI token costs for both supported periods in one go.
-    // Runs once on mount (and on manual sync) so switching the period filter
-    // is instant — no extra API calls needed.
-    const fetchOpenAICosts = async () => {
-        const [res7, res30] = await Promise.allSettled([
-            axios.get('/v1/usage/openai-costs?days=7'),
-            axios.get('/v1/usage/openai-costs?days=30'),
-        ]);
-        setOpenaiCostsMap(prev => {
-            const next = { ...prev };
-            if (res7.status  === 'fulfilled') next['7']  = res7.value.data;
-            if (res30.status === 'fulfilled') next['30'] = res30.value.data;
-            return next;
-        });
+    const fetchOpenAICosts = async (days = activeDays) => {
+        const res = await Promise.allSettled([axios.get(`/v1/usage/openai-costs?days=${days}`)]);
+        if (res[0].status === 'fulfilled') {
+            setOpenaiCostsMap(prev => ({ ...prev, [String(days)]: res[0].value.data }));
+        }
+    };
+
+    const fetchMonthlyHistory = async () => {
+        try {
+            const res = await axios.get('/v1/usage/monthly-history');
+            setMonthlyHistory(res.data.months || []);
+        } catch { /* ignore */ }
     };
 
     const fetchDocumentUsage = async () => {
         setLoading(true);
         try {
-            console.log('Fetching document usage data for period:', period);
-
-            // Calculate date range based on period
-            const days = parseInt(period.replace('d', ''));
-            const toDate = new Date();
-            const fromDate = new Date();
-            fromDate.setDate(toDate.getDate() - days);
+            // Always fetch from the start of the current month (billing cycle)
+            const now = new Date();
+            const fromDate = new Date(now.getFullYear(), now.getMonth(), 1);
 
             const from = fromDate.toISOString().split('T')[0];
-            const to = toDate.toISOString().split('T')[0];
+            const to = now.toISOString().split('T')[0];
 
             const [docRes, limitsRes] = await Promise.allSettled([
                 axios.get('/v1/usage/document-usage', { params: { from, to } }),
@@ -186,7 +189,7 @@ export default function Dashboard() {
             } else {
                 // Trigger backend sync then refresh all data including OpenAI costs
                 await axios.post('/v1/integrations/make/sync');
-                await Promise.all([fetchData(), fetchOpenAICosts()]);
+                await Promise.all([fetchData(activeDays), fetchOpenAICosts(activeDays), fetchMonthlyHistory()]);
             }
         } catch (error) {
             console.error('Sync failed:', error);
@@ -315,7 +318,7 @@ export default function Dashboard() {
 
     const handleExport = async () => {
         try {
-            const response = await axios.get(`/v1/usage/exports?days=${period.replace('d', '')}`, {
+            const response = await axios.get(`/v1/usage/exports?days=${activeDays}`, {
                 responseType: 'blob',
             });
             const url = window.URL.createObjectURL(new Blob([response.data]));
@@ -333,14 +336,14 @@ export default function Dashboard() {
     // 3. Effects
     useEffect(() => {
         if (activeTab === 'infrastructure') {
-            fetchData();
+            fetchData(activeDays);
+            fetchOpenAICosts(activeDays);
         } else {
             fetchDocumentUsage();
         }
-    }, [period, activeTab]);
+    }, [activeDays, activeTab]);
 
-    // Fetch OpenAI costs for both periods once on mount
-    useEffect(() => { fetchOpenAICosts(); }, []);
+    useEffect(() => { if (isAdmin) fetchMonthlyHistory(); }, []);
 
     // Fetch integration config when settings open
     useEffect(() => {
@@ -379,7 +382,7 @@ export default function Dashboard() {
     const azurePages = summary?.summary?.azure?.eventCount || 0;
     const azureEurCost = azurePages * 1.50 / 1000;
     // OpenAI: real cost fetched directly from OpenAI API (GPT-4o pricing, converted to EUR)
-    const openaiCosts = openaiCostsMap[period.replace('d', '')] ?? null;
+    const openaiCosts = openaiCostsMap[String(activeDays)] ?? null;
     const openaiCost = parseFloat(openaiCosts?.costEur || '0');
     // Total across all sources
     const eurTotal = (makeEurCost + azureEurCost + openaiCost).toFixed(2);
@@ -407,14 +410,6 @@ export default function Dashboard() {
                     </p>
                 </div>
                 <div style={{ display: 'flex', gap: '1rem' }}>
-                    <select
-                        value={period}
-                        onChange={(e) => setPeriod(e.target.value)}
-                        className="period-select"
-                    >
-                        <option value="7d">Last 7 days</option>
-                        <option value="30d">Last 30 days</option>
-                    </select>
                     <button className="btn-secondary" onClick={handleExport}>
                         <Download size={16} />
                         Export
@@ -429,6 +424,54 @@ export default function Dashboard() {
                     </button>
                 </div>
             </div>
+
+            {/* Period filter — infrastructure tab only */}
+            {isAdmin && activeTab === 'infrastructure' && (
+                <div className="period-filter">
+                    <button
+                        className={`period-btn ${filterMode === '7d' ? 'active' : ''}`}
+                        onClick={() => { setFilterMode('7d'); setActiveDays(7); setCustomDaysError(''); }}
+                    >Last 7 days</button>
+                    <button
+                        className={`period-btn ${filterMode === '30d' ? 'active' : ''}`}
+                        onClick={() => { setFilterMode('30d'); setActiveDays(30); setCustomDaysError(''); }}
+                    >Last 30 days</button>
+                    <button
+                        className={`period-btn ${filterMode === 'custom' ? 'active' : ''}`}
+                        onClick={() => { setFilterMode('custom'); setCustomDays(''); setCustomDaysError(''); }}
+                    >Custom</button>
+                    {filterMode === 'custom' && (
+                        <div className="custom-days-wrap">
+                            <input
+                                type="number"
+                                className="custom-days-input"
+                                placeholder="Days (1–30)"
+                                value={customDays}
+                                min={1}
+                                max={30}
+                                onChange={(e) => { setCustomDays(e.target.value); setCustomDaysError(''); }}
+                            />
+                            <button
+                                className="period-btn active"
+                                onClick={() => {
+                                    const d = parseInt(customDays);
+                                    if (isNaN(d) || d < 1) {
+                                        setCustomDaysError('Please enter a number between 1 and 30.');
+                                        return;
+                                    }
+                                    if (d > 30) {
+                                        setCustomDaysError('Maximum allowed is 30 days.');
+                                        return;
+                                    }
+                                    setCustomDaysError('');
+                                    setActiveDays(d);
+                                }}
+                            >Apply</button>
+                        </div>
+                    )}
+                    {customDaysError && <span className="custom-days-error">{customDaysError}</span>}
+                </div>
+            )}
 
             {/* Tab Switcher */}
             <div className="tab-switcher">
@@ -561,8 +604,28 @@ export default function Dashboard() {
                                 <span className="usage-unit">EUR</span>
                             </div>
                             <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', marginTop: '1rem' }}>
-                                {totalEvents} total events across all sources in {period}
+                                {totalEvents} total events across all sources in last {activeDays} days
                             </p>
+                        </div>
+                    </div>
+
+                    {/* Pages & Rows for the selected period */}
+                    <div className="stats-grid" style={{ gridTemplateColumns: 'repeat(2,1fr)', marginBottom: '2rem' }}>
+                        <div className="card">
+                            <div className="card-title">
+                                <h3 style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}><PdfIcon size={18} /> PDF Pages Processed</h3>
+                                <FileText size={20} color="#6366f1" />
+                            </div>
+                            <div className="usage-value">{(infraDocUsage?.pagesSpent ?? 0).toLocaleString()}<span className="usage-unit">pages</span></div>
+                            <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginTop: '0.75rem' }}>Last {activeDays} days</p>
+                        </div>
+                        <div className="card">
+                            <div className="card-title">
+                                <h3 style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}><ExcelIcon size={18} /> Excel Rows Extracted</h3>
+                                <TrendingUp size={20} color="#ec4899" />
+                            </div>
+                            <div className="usage-value">{(infraDocUsage?.rowsUsed ?? 0).toLocaleString()}<span className="usage-unit">rows</span></div>
+                            <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginTop: '0.75rem' }}>Last {activeDays} days</p>
                         </div>
                     </div>
 
@@ -589,6 +652,35 @@ export default function Dashboard() {
                                 </AreaChart>
                             </ResponsiveContainer>
                         </div>
+                    </div>
+
+                    {/* Monthly Usage History */}
+                    <div className="card" style={{ marginTop: '2rem' }}>
+                        <h3 style={{ marginBottom: '1.5rem' }}>Monthly Usage History</h3>
+                        {monthlyHistory.length === 0 ? (
+                            <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>No monthly history yet. History is recorded automatically when you reset usage.</p>
+                        ) : (
+                            <table className="monthly-table">
+                                <thead>
+                                    <tr>
+                                        <th>Month</th>
+                                        <th>PDF Pages</th>
+                                        <th>Excel Rows</th>
+                                        <th></th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {monthlyHistory.map((m) => (
+                                        <tr key={`${m.year}-${m.month}`} className={m.isCurrent ? 'current-month-row' : ''}>
+                                            <td>{m.monthLabel}</td>
+                                            <td>{m.pagesSpent.toLocaleString()}</td>
+                                            <td>{m.rowsUsed.toLocaleString()}</td>
+                                            <td>{m.isCurrent && <span className="current-badge">Current</span>}</td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        )}
                     </div>
                 </>
             ) : (
@@ -646,7 +738,7 @@ export default function Dashboard() {
                                 </div>
                             )}
                             <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginTop: '0.75rem' }}>
-                                PDF Pages processed in {period}
+                                PDF Pages processed in the current billing cycle
                             </p>
                         </div>
 
@@ -687,7 +779,7 @@ export default function Dashboard() {
                                 </div>
                             )}
                             <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginTop: '0.75rem' }}>
-                                Excel Rows extracted in {period}
+                                Excel Rows extracted in the current billing cycle
                             </p>
                         </div>
                     </div>
@@ -1116,6 +1208,80 @@ export default function Dashboard() {
         }
         .doc-quota-fill--addon {
           background: linear-gradient(90deg, #f59e0b, #ec4899);
+        }
+        .period-filter {
+          display: flex;
+          align-items: center;
+          gap: 0.5rem;
+          margin-bottom: 1.5rem;
+          flex-wrap: wrap;
+        }
+        .period-btn {
+          padding: 0.45rem 1.1rem;
+          border: 1px solid var(--glass-border);
+          border-radius: 0.65rem;
+          background: var(--surface);
+          color: var(--text-muted);
+          font-size: 0.85rem;
+          font-weight: 600;
+          cursor: pointer;
+          transition: all 0.2s;
+        }
+        .period-btn:hover { color: var(--text); border-color: var(--primary); }
+        .period-btn.active {
+          background: rgba(99,102,241,0.15);
+          border-color: var(--primary);
+          color: var(--primary);
+        }
+        .custom-days-wrap {
+          display: flex;
+          align-items: center;
+          gap: 0.4rem;
+        }
+        .custom-days-input {
+          width: 110px;
+          padding: 0.42rem 0.75rem;
+          background: var(--surface);
+          border: 1px solid var(--glass-border);
+          border-radius: 0.65rem;
+          color: var(--text);
+          font-size: 0.85rem;
+        }
+        .custom-days-input:focus { outline: none; border-color: var(--primary); }
+        .custom-days-error {
+          color: #ef4444;
+          font-size: 0.8rem;
+          margin-left: 0.25rem;
+        }
+        .monthly-table {
+          width: 100%;
+          border-collapse: collapse;
+          font-size: 0.9rem;
+        }
+        .monthly-table th {
+          text-align: left;
+          padding: 0.6rem 1rem;
+          color: var(--text-muted);
+          font-weight: 600;
+          border-bottom: 1px solid var(--glass-border);
+          font-size: 0.8rem;
+          text-transform: uppercase;
+          letter-spacing: 0.5px;
+        }
+        .monthly-table td {
+          padding: 0.75rem 1rem;
+          border-bottom: 1px solid rgba(255,255,255,0.04);
+        }
+        .monthly-table tr:last-child td { border-bottom: none; }
+        .current-month-row td { color: var(--primary); }
+        .current-badge {
+          padding: 0.2rem 0.6rem;
+          background: rgba(99,102,241,0.15);
+          border: 1px solid rgba(99,102,241,0.3);
+          border-radius: 0.4rem;
+          font-size: 0.72rem;
+          font-weight: 600;
+          color: var(--primary);
         }
       `}</style>
         </div>

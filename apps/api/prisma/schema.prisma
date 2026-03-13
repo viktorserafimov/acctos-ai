@@ -127,6 +127,21 @@ model DocumentUsageAggregate {
   @@map("document_usage_aggregates")
 }
 
+model MonthlyUsageSnapshot {
+  id         String   @id @default(cuid())
+  tenantId   String
+  year       Int
+  month      Int
+  pagesSpent Int      @default(0)
+  rowsUsed   Int      @default(0)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@unique([tenantId, year, month])
+  @@index([tenantId, year, month])
+  @@map("monthly_usage_snapshots")
+}
+
 model Subscription {
   id               String    @id @default(cuid())
   tenantId         String    @unique
