@@ -55,8 +55,8 @@ export default function Layout({ children }: LayoutProps) {
             {/* Header */}
             <header className="header">
                 <div className="brand">
-                    <img src="/aiassist_logo.png" alt="Acctos AI" className="brand-logo" />
-                    <div style={{ marginLeft: '-8px', marginTop: '4px' }}>
+                    <img src="/acctos-ai-logo.svg" alt="Acctos AI" className="brand-logo" />
+                    <div>
                         <h1>Acctos AI</h1>
                         <p>{t.poweredBy}</p>
                     </div>
@@ -169,8 +169,8 @@ export default function Layout({ children }: LayoutProps) {
             </div>
 
             <style>{`
-        .brand { display: flex; align-items: center; gap: 0.35rem; }
-        .brand-logo { height: 96px; width: auto; object-fit: contain; position: relative; top: 6px; }
+        .brand { display: flex; align-items: flex-start; gap: 0.75rem; }
+        .brand-logo { height: 2rem; width: auto; object-fit: contain; display: block; margin-top: 4px; filter: drop-shadow(0 0 12px rgba(99, 102, 241, 0.5)) drop-shadow(0 0 4px rgba(236, 72, 153, 0.3)); }
 
         .lang-switcher {
           display: flex;
