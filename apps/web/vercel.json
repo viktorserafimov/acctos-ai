@@ -1,6 +1,8 @@
 {
   "rewrites": [
     { "source": "/dashboard/assets/:path*", "destination": "/assets/:path*" },
+    { "source": "/dashboard/acctos-ai-logo.svg", "destination": "/acctos-ai-logo.svg" },
+    { "source": "/dashboard/excel_logo.png", "destination": "/excel_logo.png" },
     { "source": "/dashboard/(.*)", "destination": "/index.html" },
     { "source": "/dashboard", "destination": "/index.html" },
     { "source": "/(.*)", "destination": "/index.html" }
