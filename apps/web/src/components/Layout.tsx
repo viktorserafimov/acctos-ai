@@ -142,7 +142,7 @@ export default function Layout({ children }: LayoutProps) {
             <div className="main-layout">
                 {/* Sidebar Navigation */}
                 <nav className="sidebar">
-                    <NavLink to="/dashboard" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
+                    <NavLink to="/home" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
                         <LayoutDashboard size={20} />
                         <span>{t.navUsage}</span>
                     </NavLink>

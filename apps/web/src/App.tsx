@@ -40,7 +40,7 @@ function AdminRoute({ children }: { children: React.ReactNode }) {
     }
 
     if (!isAdmin) {
-        return <Navigate to="/dashboard" replace />;
+        return <Navigate to="/home" replace />;
     }
 
     return <>{children}</>;
@@ -61,10 +61,10 @@ function AppRoutes() {
         <Routes>
             <Route
                 path="/"
-                element={token ? <Navigate to="/dashboard" replace /> : <LandingPage />}
+                element={token ? <Navigate to="/home" replace /> : <LandingPage />}
             />
             <Route
-                path="/dashboard"
+                path="/home"
                 element={
                     <ProtectedRoute>
                         <Layout>
@@ -127,7 +127,7 @@ function App() {
     return (
         <ErrorBoundary>
             <LanguageProvider>
-                <BrowserRouter>
+                <BrowserRouter basename="/dashboard">
                     <AuthProvider>
                         <AppRoutes />
                     </AuthProvider>

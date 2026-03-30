@@ -27,7 +27,7 @@ export default function LandingPage() {
         try {
             if (isLogin) {
                 await login(email, password);
-                navigate('/dashboard');
+                navigate('/home');
             } else {
                 await register(email, password, name, tenantName);
                 setSuccess(t.registrationSuccess);
