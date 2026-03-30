@@ -13,7 +13,7 @@ const PdfIcon = ({ size = 16 }: { size?: number }) => (
 );
 
 const ExcelIcon = ({ size = 16 }: { size?: number }) => (
-    <img src="/excel_logo.png" alt="Excel" width={size} height={size} style={{ objectFit: 'contain', flexShrink: 0 }} />
+    <img src={`${import.meta.env.BASE_URL}excel_logo.png`} alt="Excel" width={size} height={size} style={{ objectFit: 'contain', flexShrink: 0 }} />
 );
 
 // ── Hardcoded plan definitions ────────────────────────────────────────────────

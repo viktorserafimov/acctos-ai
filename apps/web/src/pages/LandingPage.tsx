@@ -65,7 +65,7 @@ export default function LandingPage() {
                             <h1>Acctos AI</h1>
                             <p className="powered-by">{t.poweredBy}</p>
                         </div>
-                        <img src="/acctos-ai-logo.svg" alt="Acctos AI" className="landing-logo" />
+                        <img src={`${import.meta.env.BASE_URL}acctos-ai-logo.svg`} alt="Acctos AI" className="landing-logo" />
                     </div>
                     <p>{t.landingTagline}</p>
 

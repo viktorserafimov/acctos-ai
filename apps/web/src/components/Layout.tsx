@@ -55,7 +55,7 @@ export default function Layout({ children }: LayoutProps) {
             {/* Header */}
             <header className="header">
                 <div className="brand">
-                    <img src="/acctos-ai-logo.svg" alt="Acctos AI" className="brand-logo" />
+                    <img src={`${import.meta.env.BASE_URL}acctos-ai-logo.svg`} alt="Acctos AI" className="brand-logo" />
                     <div>
                         <h1>Acctos AI</h1>
                         <p>{t.poweredBy}</p>
