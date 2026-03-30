@@ -65,7 +65,7 @@ export default function LandingPage() {
                             <h1>Acctos AI</h1>
                             <p className="powered-by">{t.poweredBy}</p>
                         </div>
-                        <img src="/aiassist_logo.png" alt="Acctos AI" className="landing-logo" />
+                        <img src="/acctos-ai-logo.svg" alt="Acctos AI" className="landing-logo" />
                     </div>
                     <p>{t.landingTagline}</p>
 
@@ -235,18 +235,17 @@ export default function LandingPage() {
         }
         .landing-title {
           display: flex;
-          align-items: center;
-          gap: 0.35rem;
+          align-items: flex-start;
+          gap: 1.5rem;
           margin: 1.5rem 0 1.5rem;
         }
         .landing-logo {
-          height: 104px;
+          height: 3.5rem;
           width: auto;
           object-fit: contain;
           flex-shrink: 0;
-          position: relative;
-          top: -8px;
-          left: -8px;
+          display: block;
+          filter: drop-shadow(0 0 24px rgba(99, 102, 241, 0.5)) drop-shadow(0 0 8px rgba(236, 72, 153, 0.3));
         }
         .landing-hero h1 {
           font-size: 3.5rem;
