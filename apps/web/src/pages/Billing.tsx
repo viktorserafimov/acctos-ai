@@ -3,6 +3,7 @@ import axios from 'axios';
 import { CreditCard, Check, AlertCircle, ExternalLink, FlaskConical, SlidersHorizontal } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useLanguage } from '../context/LanguageContext';
+import excelLogo from '/excel_logo.png?url';
 
 const PdfIcon = ({ size = 16 }: { size?: number }) => (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ flexShrink: 0 }}>
@@ -13,7 +14,7 @@ const PdfIcon = ({ size = 16 }: { size?: number }) => (
 );
 
 const ExcelIcon = ({ size = 16 }: { size?: number }) => (
-    <img src="/excel_logo.png" alt="Excel" width={size} height={size} style={{ objectFit: 'contain', flexShrink: 0 }} />
+    <img src={excelLogo} alt="Excel" width={size} height={size} style={{ objectFit: 'contain', flexShrink: 0 }} />
 );
 
 // ── Hardcoded plan definitions ────────────────────────────────────────────────

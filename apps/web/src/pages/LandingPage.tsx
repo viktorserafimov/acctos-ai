@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useLanguage } from '../context/LanguageContext';
 import { User, Lock, ArrowRight, CheckCircle, Building2, Mail, Eye, EyeOff } from 'lucide-react';
+import acctosLogo from '/acctos-ai-logo.svg?url';
 
 export default function LandingPage() {
     const [isLogin, setIsLogin] = useState(true);
@@ -65,7 +66,7 @@ export default function LandingPage() {
                             <h1>Acctos AI</h1>
                             <p className="powered-by">{t.poweredBy}</p>
                         </div>
-                        <img src="/acctos-ai-logo.svg" alt="Acctos AI" className="landing-logo" />
+                        <img src={acctosLogo} alt="Acctos AI" className="landing-logo" />
                     </div>
                     <p>{t.landingTagline}</p>
 

@@ -3,6 +3,7 @@ import axios from 'axios';
 import {
     AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
 } from 'recharts';
+import excelLogo from '/excel_logo.png?url';
 
 const PdfIcon = ({ size = 16 }: { size?: number }) => (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ flexShrink: 0 }}>
@@ -13,7 +14,7 @@ const PdfIcon = ({ size = 16 }: { size?: number }) => (
 );
 
 const ExcelIcon = ({ size = 16 }: { size?: number }) => (
-    <img src="/excel_logo.png" alt="Excel" width={size} height={size} style={{ objectFit: 'contain', flexShrink: 0 }} />
+    <img src={excelLogo} alt="Excel" width={size} height={size} style={{ objectFit: 'contain', flexShrink: 0 }} />
 );
 import { Zap, FileText, TrendingUp, RefreshCw, Euro, Download, Brain, Settings, X, CheckCircle, AlertCircle } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
