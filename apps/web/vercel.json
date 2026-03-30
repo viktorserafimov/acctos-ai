@@ -1,8 +1,5 @@
 {
   "rewrites": [
-    { "source": "/api/:path*", "destination": "https://acctos-aiapi-production.up.railway.app/api/:path*" },
-    { "source": "/v1/:path*",  "destination": "https://acctos-aiapi-production.up.railway.app/v1/:path*" },
-    { "source": "/dashboard/(.*)", "destination": "/dashboard/index.html" },
-    { "source": "/dashboard",      "destination": "/dashboard/index.html" }
+    { "source": "/(.*)", "destination": "/index.html" }
   ]
 }
