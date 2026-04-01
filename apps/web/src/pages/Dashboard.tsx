@@ -91,11 +91,11 @@ export default function Dashboard() {
     // Usage limits (for Document Usage tab)
     const [usageLimits, setUsageLimits] = useState<{
         currentPages: number; currentRows: number;
-        pagesLimit: number; rowsLimit: number;
+        totalPagesLimit: number; totalRowsLimit: number;
         addonPagesLimit: number; addonRowsLimit: number;
-        addonPagesUsed: number; addonRowsUsed: number;
         scenariosPaused: boolean;
     } | null>(null);
+    const [docMonthFilter, setDocMonthFilter] = useState<'current' | string>('current');
 
     // 2. Helper Functions
     const fetchData = async (days = activeDays) => {
@@ -138,15 +138,23 @@ export default function Dashboard() {
         } catch { /* ignore */ }
     };
 
-    const fetchDocumentUsage = async () => {
+    const fetchDocumentUsage = async (monthFilter: 'current' | string = 'current') => {
         setLoading(true);
         try {
-            // Always fetch from the start of the current month (billing cycle)
-            const now = new Date();
-            const fromDate = new Date(now.getFullYear(), now.getMonth(), 1);
-
-            const from = fromDate.toISOString().split('T')[0];
-            const to = now.toISOString().split('T')[0];
+            let from: string;
+            let to: string;
+            if (monthFilter !== 'current') {
+                const [y, m] = monthFilter.split('-').map(Number);
+                const start = new Date(Date.UTC(y, m - 1, 1));
+                const end = new Date(Date.UTC(y, m, 0));
+                from = start.toISOString().split('T')[0];
+                to = end.toISOString().split('T')[0];
+            } else {
+                const now = new Date();
+                const fromDate = new Date(now.getFullYear(), now.getMonth(), 1);
+                from = fromDate.toISOString().split('T')[0];
+                to = now.toISOString().split('T')[0];
+            }
 
             const [docRes, limitsRes] = await Promise.allSettled([
                 axios.get('/v1/usage/document-usage', { params: { from, to } }),
@@ -154,7 +162,6 @@ export default function Dashboard() {
             ]);
 
             if (docRes.status === 'fulfilled') {
-                console.log('Document usage data received:', docRes.value.data);
                 setDocumentUsage(docRes.value.data);
             }
             if (limitsRes.status === 'fulfilled') {
@@ -162,12 +169,10 @@ export default function Dashboard() {
                 setUsageLimits({
                     currentPages: d.currentPages ?? 0,
                     currentRows: d.currentRows ?? 0,
-                    pagesLimit: d.pagesLimit,
-                    rowsLimit: d.rowsLimit,
+                    totalPagesLimit: d.totalPagesLimit ?? d.pagesLimit,
+                    totalRowsLimit: d.totalRowsLimit ?? d.rowsLimit,
                     addonPagesLimit: d.addonPagesLimit,
                     addonRowsLimit: d.addonRowsLimit,
-                    addonPagesUsed: d.addonPagesUsed,
-                    addonRowsUsed: d.addonRowsUsed,
                     scenariosPaused: d.scenariosPaused,
                 });
             }
@@ -339,7 +344,7 @@ export default function Dashboard() {
         }
     }, [activeDays, activeTab]);
 
-    useEffect(() => { if (isAdmin) fetchMonthlyHistory(); }, []);
+    useEffect(() => { fetchMonthlyHistory(); }, []);
 
     // Fetch integration config when settings open
     useEffect(() => {
@@ -706,32 +711,21 @@ export default function Dashboard() {
                             <div className="doc-usage-row">
                                 <span className="doc-usage-current">{(usageLimits?.currentPages ?? 0).toLocaleString()}</span>
                                 <span className="doc-usage-sep">/</span>
-                                <span className="doc-usage-limit">{(usageLimits?.pagesLimit ?? 5000).toLocaleString()}</span>
+                                <span className="doc-usage-limit">{(usageLimits?.totalPagesLimit ?? 5000).toLocaleString()}</span>
                             </div>
                             <div className="doc-quota-bar">
                                 <div
                                     className="doc-quota-fill"
                                     style={{
-                                        width: `${Math.min(100, ((usageLimits?.currentPages ?? 0) / (usageLimits?.pagesLimit ?? 5000)) * 100)}%`,
-                                        background: (usageLimits?.currentPages ?? 0) >= (usageLimits?.pagesLimit ?? 5000) ? '#ef4444' : undefined,
+                                        width: `${Math.min(100, ((usageLimits?.currentPages ?? 0) / (usageLimits?.totalPagesLimit ?? 5000)) * 100)}%`,
+                                        background: (usageLimits?.currentPages ?? 0) >= (usageLimits?.totalPagesLimit ?? 5000) ? '#ef4444' : undefined,
                                     }}
                                 />
                             </div>
                             {usageLimits && usageLimits.addonPagesLimit > 0 && (
-                                <div style={{ marginTop: '0.75rem' }}>
-                                    <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginBottom: '0.3rem' }}>
-                                        {t.extraPdfPages} {usageLimits.addonPagesUsed.toLocaleString()} / {usageLimits.addonPagesLimit.toLocaleString()}
-                                    </p>
-                                    <div className="doc-quota-bar">
-                                        <div
-                                            className="doc-quota-fill doc-quota-fill--addon"
-                                            style={{
-                                                width: `${Math.min(100, (usageLimits.addonPagesUsed / usageLimits.addonPagesLimit) * 100)}%`,
-                                                background: usageLimits.addonPagesUsed >= usageLimits.addonPagesLimit ? '#ef4444' : undefined,
-                                            }}
-                                        />
-                                    </div>
-                                </div>
+                                <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: '0.5rem' }}>
+                                    +{usageLimits.addonPagesLimit.toLocaleString()} {t.extraPdfPages}
+                                </p>
                             )}
                             <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginTop: '0.75rem' }}>
                                 {t.pdfPagesBillingCycle}
@@ -747,32 +741,21 @@ export default function Dashboard() {
                             <div className="doc-usage-row">
                                 <span className="doc-usage-current">{(usageLimits?.currentRows ?? 0).toLocaleString()}</span>
                                 <span className="doc-usage-sep">/</span>
-                                <span className="doc-usage-limit">{(usageLimits?.rowsLimit ?? 5000).toLocaleString()}</span>
+                                <span className="doc-usage-limit">{(usageLimits?.totalRowsLimit ?? 5000).toLocaleString()}</span>
                             </div>
                             <div className="doc-quota-bar">
                                 <div
                                     className="doc-quota-fill"
                                     style={{
-                                        width: `${Math.min(100, ((usageLimits?.currentRows ?? 0) / (usageLimits?.rowsLimit ?? 5000)) * 100)}%`,
-                                        background: (usageLimits?.currentRows ?? 0) >= (usageLimits?.rowsLimit ?? 5000) ? '#ef4444' : undefined,
+                                        width: `${Math.min(100, ((usageLimits?.currentRows ?? 0) / (usageLimits?.totalRowsLimit ?? 5000)) * 100)}%`,
+                                        background: (usageLimits?.currentRows ?? 0) >= (usageLimits?.totalRowsLimit ?? 5000) ? '#ef4444' : undefined,
                                     }}
                                 />
                             </div>
                             {usageLimits && usageLimits.addonRowsLimit > 0 && (
-                                <div style={{ marginTop: '0.75rem' }}>
-                                    <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginBottom: '0.3rem' }}>
-                                        {t.extraExcelRows} {usageLimits.addonRowsUsed.toLocaleString()} / {usageLimits.addonRowsLimit.toLocaleString()}
-                                    </p>
-                                    <div className="doc-quota-bar">
-                                        <div
-                                            className="doc-quota-fill doc-quota-fill--addon"
-                                            style={{
-                                                width: `${Math.min(100, (usageLimits.addonRowsUsed / usageLimits.addonRowsLimit) * 100)}%`,
-                                                background: usageLimits.addonRowsUsed >= usageLimits.addonRowsLimit ? '#ef4444' : undefined,
-                                            }}
-                                        />
-                                    </div>
-                                </div>
+                                <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: '0.5rem' }}>
+                                    +{usageLimits.addonRowsLimit.toLocaleString()} {t.extraExcelRows}
+                                </p>
                             )}
                             <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginTop: '0.75rem' }}>
                                 {t.excelRowsBillingCycle}
@@ -780,9 +763,27 @@ export default function Dashboard() {
                         </div>
                     </div>
 
-                    {documentUsage && documentUsage.days.length > 0 && (
+                    {documentUsage && (
                         <div className="card" style={{ marginTop: '1.5rem' }}>
-                            <h3 style={{ marginBottom: '1.5rem' }}>{t.documentUsageOverTime}</h3>
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1.5rem', flexWrap: 'wrap', gap: '0.75rem' }}>
+                                <h3>{t.documentUsageOverTime}</h3>
+                                <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                                    <button
+                                        className={`period-btn ${docMonthFilter === 'current' ? 'active' : ''}`}
+                                        onClick={() => { setDocMonthFilter('current'); fetchDocumentUsage('current'); }}
+                                    >{t.current}</button>
+                                    {monthlyHistory.filter(m => !m.isCurrent).map(m => {
+                                        const key = `${m.year}-${String(m.month).padStart(2, '0')}`;
+                                        return (
+                                            <button
+                                                key={key}
+                                                className={`period-btn ${docMonthFilter === key ? 'active' : ''}`}
+                                                onClick={() => { setDocMonthFilter(key); fetchDocumentUsage(key); }}
+                                            >{m.monthLabel}</button>
+                                        );
+                                    })}
+                                </div>
+                            </div>
                             <div style={{ height: 400 }}>
                                 <ResponsiveContainer>
                                     <AreaChart data={documentUsage.days}>

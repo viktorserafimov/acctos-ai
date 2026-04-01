@@ -271,29 +271,6 @@ router.get('/usage-status', async (req: AuthenticatedRequest, res: Response, nex
         const totalPages     = pagesLimit + addonPages;
         const totalRows      = rowsLimit  + addonRows;
 
-        // Purchased add-on is consumed FIRST; base plan fills only after addon is exhausted.
-        // When no addon exists, all usage goes against the base plan.
-        const addonPagesUsed = addonPages > 0 ? Math.min(usage.pages, addonPages) : 0;
-        const addonRowsUsed  = addonRows  > 0 ? Math.min(usage.rows,  addonRows)  : 0;
-        const basePagesUsed  = Math.max(0, usage.pages - addonPagesUsed);
-        const baseRowsUsed   = Math.max(0, usage.rows  - addonRowsUsed);
-
-        // Auto-reset addon credits when they are fully exhausted
-        const pagesAddonExhausted = addonPages > 0 && addonPagesUsed >= addonPages;
-        const rowsAddonExhausted  = addonRows  > 0 && addonRowsUsed  >= addonRows;
-        if (pagesAddonExhausted || rowsAddonExhausted) {
-            const resetData: any = {};
-            if (pagesAddonExhausted) resetData.addonPagesLimit = 0;
-            if (rowsAddonExhausted)  resetData.addonRowsLimit  = 0;
-            try {
-                await (prisma.tenant as any).update({ where: { id: tenantId }, data: resetData });
-                if (pagesAddonExhausted) tenant.addonPagesLimit = 0;
-                if (rowsAddonExhausted)  tenant.addonRowsLimit  = 0;
-            } catch (e: any) {
-                console.warn('[usage-status] Auto-reset addon credits failed:', e.message?.split('\n')[0]);
-            }
-        }
-
         const subscription = await prisma.subscription.findUnique({ where: { tenantId } });
 
         // ── Auto-pause when limits are exceeded ───────────────────────────────────
@@ -331,10 +308,6 @@ router.get('/usage-status', async (req: AuthenticatedRequest, res: Response, nex
             rowsLimit,
             addonPagesLimit:  addonPages,
             addonRowsLimit:   addonRows,
-            addonPagesUsed,
-            addonRowsUsed,
-            basePagesUsed,
-            baseRowsUsed,
             totalPagesLimit:  totalPages,
             totalRowsLimit:   totalRows,
             scenariosPaused:  tenant.scenariosPaused ?? false,
@@ -638,16 +611,6 @@ router.post(
                 });
             }
 
-            // Delete every raw event for this tenant (all time)
-            const { count: deletedEvents } = await prisma.documentUsageEvent.deleteMany({
-                where: { customerId: tenantId },
-            });
-
-            // Delete every daily aggregate for this tenant (all time)
-            const { count: deletedAggregates } = await prisma.documentUsageAggregate.deleteMany({
-                where: { customerId: tenantId },
-            });
-
             // Start a fresh billing period at UTC midnight (to align with @db.Date field)
             const resetDate = new Date();
             resetDate.setUTCHours(0, 0, 0, 0);
@@ -676,12 +639,9 @@ router.post(
                 console.warn('[Reset Usage] Failed to clear scenariosPaused flag:', e.message?.split('\n')[0]);
             }
 
-            console.log(
-                `[Reset Usage] Admin reset for tenant ${tenantId}: ` +
-                `${deletedEvents} events, ${deletedAggregates} aggregates deleted.`
-            );
+            console.log(`[Reset Usage] Admin reset for tenant ${tenantId}: period reset to ${resetDate.toISOString()}.`);
 
-            res.json({ deletedEvents, deletedAggregates });
+            res.json({ success: true, resetAt: resetDate.toISOString() });
         } catch (error) {
             next(error);
         }
