@@ -94,15 +94,6 @@ const TEST_PAYMENTS = [
         addonType: 'rows' as const,
         addonQuantity: 1000,
     },
-    {
-        id: 'test_pages_1000',
-        label: '1,000 PDF Pages — Test Add-on',
-        description: 'Simulates a 1,000 page add-on one-time payment',
-        stripeLink: 'https://buy.stripe.com/8x200kg4CbGya6efYoaZi0l',
-        type: 'addon' as const,
-        addonType: 'pages' as const,
-        addonQuantity: 1000,
-    },
 ];
 
 // Map Stripe Price IDs → plan tier (fill in once Stripe webhooks are live)
