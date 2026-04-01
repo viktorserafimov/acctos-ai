@@ -24,6 +24,7 @@ model Tenant {
   pagesLimit          Int                  @default(1000)
   rowsLimit           Int                  @default(1000)
   scenariosPaused     Boolean              @default(false)
+  limitWarningFiredAt DateTime?
   auditLogs           AuditLog[]
   memberships         Membership[]
   subscription        Subscription?

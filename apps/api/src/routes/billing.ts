@@ -273,6 +273,42 @@ router.get('/usage-status', async (req: AuthenticatedRequest, res: Response, nex
 
         const subscription = await prisma.subscription.findUnique({ where: { tenantId } });
 
+        // ── Low-limit warning webhook ─────────────────────────────────────────────
+        // Fire once per billing period when pages or rows remaining drop to <= 500.
+        // limitWarningFiredAt is cleared on each reset so it fires again next period.
+        const LOW_LIMIT_THRESHOLD = 500;
+        const pagesRemaining = totalPages - usage.pages;
+        const rowsRemaining  = totalRows  - usage.rows;
+        const isLow = pagesRemaining <= LOW_LIMIT_THRESHOLD || rowsRemaining <= LOW_LIMIT_THRESHOLD;
+        const warningAlreadySent = tenant.limitWarningFiredAt &&
+            tenant.limitWarningFiredAt >= periodStart;
+        if (isLow && !warningAlreadySent) {
+            // Mark as fired synchronously to prevent duplicate webhooks on concurrent polls
+            try {
+                await (prisma.tenant as any).update({
+                    where: { id: tenantId },
+                    data: { limitWarningFiredAt: new Date() },
+                });
+            } catch (e: any) {
+                console.warn('[usage-status] Failed to set limitWarningFiredAt:', e.message?.split('\n')[0]);
+            }
+            // Fire webhook fire-and-forget
+            fetch('https://services.leadconnectorhq.com/hooks/gjXG8jJC010S1aU1N1Le/webhook-trigger/2b5db06c-ff78-4d49-9c02-2ee662148b75', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    tenantId,
+                    tenantName:     (tenant as any).name ?? tenantId,
+                    pagesRemaining,
+                    rowsRemaining,
+                    totalPagesLimit: totalPages,
+                    totalRowsLimit:  totalRows,
+                    currentPages:   usage.pages,
+                    currentRows:    usage.rows,
+                }),
+            }).catch((e) => console.error('[usage-status] Low-limit webhook failed:', e));
+        }
+
         // ── Auto-pause when limits are exceeded ───────────────────────────────────
         // usage-status is polled every ~60 s by Layout.tsx, making this the
         // reliable heartbeat that catches limit breaches regardless of whether
@@ -310,6 +346,9 @@ router.get('/usage-status', async (req: AuthenticatedRequest, res: Response, nex
             addonRowsLimit:   addonRows,
             totalPagesLimit:  totalPages,
             totalRowsLimit:   totalRows,
+            pagesRemaining,
+            rowsRemaining,
+            limitWarning:     isLow,
             scenariosPaused:  tenant.scenariosPaused ?? false,
             lastResetAt:      periodStart.toISOString(),
             nextResetAt:      getNextResetDate().toISOString(),
@@ -633,7 +672,7 @@ router.post(
             try {
                 await (prisma.tenant as any).update({
                     where: { id: tenantId },
-                    data: { scenariosPaused: false },
+                    data: { scenariosPaused: false, limitWarningFiredAt: null },
                 });
             } catch (e: any) {
                 console.warn('[Reset Usage] Failed to clear scenariosPaused flag:', e.message?.split('\n')[0]);

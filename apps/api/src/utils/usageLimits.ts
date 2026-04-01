@@ -71,6 +71,7 @@ export async function applyMonthlyResetIfNeeded(
                 addonPagesLimit: 0,
                 addonRowsLimit: 0,
                 lastResetAt: expectedReset,
+                limitWarningFiredAt: null,
             },
         });
 

@@ -93,6 +93,8 @@ export default function Dashboard() {
         currentPages: number; currentRows: number;
         totalPagesLimit: number; totalRowsLimit: number;
         addonPagesLimit: number; addonRowsLimit: number;
+        pagesRemaining: number; rowsRemaining: number;
+        limitWarning: boolean;
         scenariosPaused: boolean;
     } | null>(null);
     const [docMonthFilter, setDocMonthFilter] = useState<'current' | string>('current');
@@ -167,12 +169,15 @@ export default function Dashboard() {
             if (limitsRes.status === 'fulfilled') {
                 const d = limitsRes.value.data;
                 setUsageLimits({
-                    currentPages: d.currentPages ?? 0,
-                    currentRows: d.currentRows ?? 0,
+                    currentPages:    d.currentPages ?? 0,
+                    currentRows:     d.currentRows ?? 0,
                     totalPagesLimit: d.totalPagesLimit ?? d.pagesLimit,
-                    totalRowsLimit: d.totalRowsLimit ?? d.rowsLimit,
+                    totalRowsLimit:  d.totalRowsLimit ?? d.rowsLimit,
                     addonPagesLimit: d.addonPagesLimit,
-                    addonRowsLimit: d.addonRowsLimit,
+                    addonRowsLimit:  d.addonRowsLimit,
+                    pagesRemaining:  d.pagesRemaining ?? ((d.totalPagesLimit ?? d.pagesLimit) - (d.currentPages ?? 0)),
+                    rowsRemaining:   d.rowsRemaining  ?? ((d.totalRowsLimit  ?? d.rowsLimit)  - (d.currentRows  ?? 0)),
+                    limitWarning:    d.limitWarning ?? false,
                     scenariosPaused: d.scenariosPaused,
                 });
             }
@@ -686,6 +691,26 @@ export default function Dashboard() {
                 </>
             ) : (
                 <>
+                    {/* Low-limit warning */}
+                    {usageLimits?.limitWarning && !usageLimits?.scenariosPaused && (
+                        <div style={{
+                            display: 'flex', alignItems: 'center', gap: '0.75rem',
+                            padding: '1rem 1.25rem',
+                            background: 'rgba(245,158,11,0.1)',
+                            border: '1px solid rgba(245,158,11,0.35)',
+                            borderRadius: '1rem', color: '#f59e0b',
+                            marginBottom: '1.5rem', fontSize: '0.9rem'
+                        }}>
+                            <AlertCircle size={18} style={{ flexShrink: 0 }} />
+                            <span>
+                                <strong>Usage limit approaching — </strong>
+                                {usageLimits.pagesRemaining <= 500 && <span>only <strong>{usageLimits.pagesRemaining.toLocaleString()}</strong> PDF pages remaining. </span>}
+                                {usageLimits.rowsRemaining <= 500 && <span>only <strong>{usageLimits.rowsRemaining.toLocaleString()}</strong> Excel rows remaining. </span>}
+                                Your automations will stop when the limit is reached. Purchase more capacity in Billing.
+                            </span>
+                        </div>
+                    )}
+
                     {/* Paused notice */}
                     {usageLimits?.scenariosPaused && (
                         <div style={{
