@@ -107,10 +107,6 @@ interface UsageStatus {
     rowsLimit: number;
     addonPagesLimit: number;
     addonRowsLimit: number;
-    addonPagesUsed: number;
-    addonRowsUsed: number;
-    basePagesUsed: number;
-    baseRowsUsed: number;
     totalPagesLimit: number;
     totalRowsLimit: number;
     scenariosPaused: boolean;
@@ -275,26 +271,16 @@ export default function Billing() {
     }
 
     const us = usageStatus;
-    const pagesLimit     = us?.pagesLimit     ?? 5000;
-    const rowsLimit      = us?.rowsLimit      ?? 5000;
     const addonPages     = us?.addonPagesLimit ?? 0;
     const addonRows      = us?.addonRowsLimit  ?? 0;
-    // Prefer billing-period usage from usage-status — this is the same window
-    // the auto-pause logic uses, so the bar turns red exactly when limits trip.
-    // Fall back to raw 30-day usage only when usage-status is unavailable.
+    const totalPages     = us?.totalPagesLimit ?? us?.pagesLimit ?? 5000;
+    const totalRows      = us?.totalRowsLimit  ?? us?.rowsLimit  ?? 5000;
     const curPages       = us?.currentPages ?? rawUsage?.pages ?? 0;
     const curRows        = us?.currentRows  ?? rawUsage?.rows  ?? 0;
-    // Purchased add-on is consumed FIRST; base plan fills only after addon is exhausted.
-    const addonPagesUsed = us?.addonPagesUsed ?? (addonPages > 0 ? Math.min(curPages, addonPages) : 0);
-    const addonRowsUsed  = us?.addonRowsUsed  ?? (addonRows  > 0 ? Math.min(curRows,  addonRows)  : 0);
-    const basePagesUsed  = us?.basePagesUsed  ?? Math.max(0, curPages - addonPagesUsed);
-    const baseRowsUsed   = us?.baseRowsUsed   ?? Math.max(0, curRows  - addonRowsUsed);
     const isPaused       = us?.scenariosPaused ?? false;
 
-    const pagesPct      = Math.min(100, pagesLimit > 0 ? (basePagesUsed  / pagesLimit)  * 100 : 0);
-    const rowsPct       = Math.min(100, rowsLimit  > 0 ? (baseRowsUsed   / rowsLimit)   * 100 : 0);
-    const addonPagesPct = Math.min(100, addonPages > 0 ? (addonPagesUsed / addonPages) * 100 : 0);
-    const addonRowsPct  = Math.min(100, addonRows  > 0 ? (addonRowsUsed  / addonRows)  * 100 : 0);
+    const pagesPct = Math.min(100, totalPages > 0 ? (curPages / totalPages) * 100 : 0);
+    const rowsPct  = Math.min(100, totalRows  > 0 ? (curRows  / totalRows)  * 100 : 0);
 
     return (
         <div>
@@ -340,52 +326,42 @@ export default function Billing() {
                 </div>
 
                 <div className="quota-grid">
-                    {/* PDF Pages — plan bar on top, purchased bar below */}
+                    {/* PDF Pages */}
                     <div className="quota-item">
                         <div className="quota-item-header">
                             <span className="quota-label" style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
                                 <PdfIcon size={15} />
                                 <span>{t.pdfPagesUsed}</span>
                             </span>
-                            <span className="quota-value">{basePagesUsed.toLocaleString()} / {pagesLimit.toLocaleString()}</span>
+                            <span className="quota-value">{curPages.toLocaleString()} / {totalPages.toLocaleString()}</span>
                         </div>
                         <div className="quota-bar">
                             <div className="quota-fill" style={{ width: `${pagesPct}%`, background: pagesPct >= 100 ? '#ef4444' : undefined }} />
                         </div>
-                        <div className="quota-item-header" style={{ marginTop: '0.75rem' }}>
-                            <span className="quota-label" style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-                                <PdfIcon size={15} />
-                                <span>Custom PDF Pages</span>
-                            </span>
-                            <span className="quota-value">{addonPagesUsed.toLocaleString()} / {addonPages.toLocaleString()}</span>
-                        </div>
-                        <div className="quota-bar">
-                            <div className="quota-fill addon-fill" style={{ width: `${addonPagesPct}%`, background: addonPagesPct >= 100 ? '#ef4444' : undefined }} />
-                        </div>
+                        {addonPages > 0 && (
+                            <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.4rem' }}>
+                                Includes +{addonPages.toLocaleString()} purchased pages
+                            </p>
+                        )}
                     </div>
 
-                    {/* Excel Rows — plan bar on top, purchased bar below */}
+                    {/* Excel Rows */}
                     <div className="quota-item">
                         <div className="quota-item-header">
                             <span className="quota-label" style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
                                 <ExcelIcon size={15} />
                                 <span>{t.excelRowsUsed2}</span>
                             </span>
-                            <span className="quota-value">{baseRowsUsed.toLocaleString()} / {rowsLimit.toLocaleString()}</span>
+                            <span className="quota-value">{curRows.toLocaleString()} / {totalRows.toLocaleString()}</span>
                         </div>
                         <div className="quota-bar">
                             <div className="quota-fill" style={{ width: `${rowsPct}%`, background: rowsPct >= 100 ? '#ef4444' : undefined }} />
                         </div>
-                        <div className="quota-item-header" style={{ marginTop: '0.75rem' }}>
-                            <span className="quota-label" style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-                                <ExcelIcon size={15} />
-                                <span>Custom Excel Rows</span>
-                            </span>
-                            <span className="quota-value">{addonRowsUsed.toLocaleString()} / {addonRows.toLocaleString()}</span>
-                        </div>
-                        <div className="quota-bar">
-                            <div className="quota-fill addon-fill" style={{ width: `${addonRowsPct}%`, background: addonRowsPct >= 100 ? '#ef4444' : undefined }} />
-                        </div>
+                        {addonRows > 0 && (
+                            <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.4rem' }}>
+                                Includes +{addonRows.toLocaleString()} purchased rows
+                            </p>
+                        )}
                     </div>
                 </div>
 
