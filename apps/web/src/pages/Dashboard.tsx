@@ -97,7 +97,7 @@ export default function Dashboard() {
         limitWarning: boolean;
         scenariosPaused: boolean;
     } | null>(null);
-    const [docMonthFilter, setDocMonthFilter] = useState<'current' | string>('current');
+    const [docMonthFilter, setDocMonthFilter] = useState<'30d' | 'current-month' | 'prev-month'>('30d');
 
     // 2. Helper Functions
     const fetchData = async (days = activeDays) => {
@@ -140,22 +140,26 @@ export default function Dashboard() {
         } catch { /* ignore */ }
     };
 
-    const fetchDocumentUsage = async (monthFilter: 'current' | string = 'current') => {
+    const fetchDocumentUsage = async (monthFilter: '30d' | 'current-month' | 'prev-month' = '30d') => {
         setLoading(true);
         try {
+            const now = new Date();
             let from: string;
             let to: string;
-            if (monthFilter !== 'current') {
-                const [y, m] = monthFilter.split('-').map(Number);
-                const start = new Date(Date.UTC(y, m - 1, 1));
-                const end = new Date(Date.UTC(y, m, 0));
-                from = start.toISOString().split('T')[0];
-                to = end.toISOString().split('T')[0];
-            } else {
-                const now = new Date();
-                const fromDate = new Date(now.getFullYear(), now.getMonth(), 1);
-                from = fromDate.toISOString().split('T')[0];
+            if (monthFilter === 'current-month') {
+                from = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0];
                 to = now.toISOString().split('T')[0];
+            } else if (monthFilter === 'prev-month') {
+                const first = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+                const last  = new Date(now.getFullYear(), now.getMonth(), 0);
+                from = first.toISOString().split('T')[0];
+                to   = last.toISOString().split('T')[0];
+            } else {
+                // default: last 30 days
+                const f = new Date(now);
+                f.setDate(f.getDate() - 30);
+                from = f.toISOString().split('T')[0];
+                to   = now.toISOString().split('T')[0];
             }
 
             const [docRes, limitsRes] = await Promise.allSettled([
@@ -197,7 +201,7 @@ export default function Dashboard() {
         setLoading(true);
         try {
             if (activeTab === 'document') {
-                await fetchDocumentUsage();
+                await fetchDocumentUsage(docMonthFilter);
             } else {
                 // Trigger backend sync then refresh all data including OpenAI costs
                 await axios.post('/v1/integrations/make/sync');
@@ -345,7 +349,7 @@ export default function Dashboard() {
             fetchData(activeDays);
             fetchOpenAICosts(activeDays);
         } else {
-            fetchDocumentUsage();
+            fetchDocumentUsage(docMonthFilter);
         }
     }, [activeDays, activeTab]);
 
@@ -788,48 +792,50 @@ export default function Dashboard() {
                         </div>
                     </div>
 
-                    {documentUsage && (
-                        <div className="card" style={{ marginTop: '1.5rem' }}>
+                    <div className="card" style={{ marginTop: '1.5rem' }}>
                             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1.5rem', flexWrap: 'wrap', gap: '0.75rem' }}>
                                 <h3>{t.documentUsageOverTime}</h3>
                                 <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
                                     <button
-                                        className={`period-btn ${docMonthFilter === 'current' ? 'active' : ''}`}
-                                        onClick={() => { setDocMonthFilter('current'); fetchDocumentUsage('current'); }}
-                                    >{t.current}</button>
-                                    {monthlyHistory.filter(m => !m.isCurrent).map(m => {
-                                        const key = `${m.year}-${String(m.month).padStart(2, '0')}`;
-                                        return (
-                                            <button
-                                                key={key}
-                                                className={`period-btn ${docMonthFilter === key ? 'active' : ''}`}
-                                                onClick={() => { setDocMonthFilter(key); fetchDocumentUsage(key); }}
-                                            >{m.monthLabel}</button>
-                                        );
-                                    })}
+                                        className={`period-btn ${docMonthFilter === '30d' ? 'active' : ''}`}
+                                        onClick={() => { setDocMonthFilter('30d'); fetchDocumentUsage('30d'); }}
+                                    >Last 30 days</button>
+                                    <button
+                                        className={`period-btn ${docMonthFilter === 'current-month' ? 'active' : ''}`}
+                                        onClick={() => { setDocMonthFilter('current-month'); fetchDocumentUsage('current-month'); }}
+                                    >Current month</button>
+                                    <button
+                                        className={`period-btn ${docMonthFilter === 'prev-month' ? 'active' : ''}`}
+                                        onClick={() => { setDocMonthFilter('prev-month'); fetchDocumentUsage('prev-month'); }}
+                                    >Previous month</button>
                                 </div>
                             </div>
-                            <div style={{ height: 400 }}>
-                                <ResponsiveContainer>
-                                    <AreaChart data={documentUsage.days}>
-                                        <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
-                                        <XAxis dataKey="date" stroke="var(--text-muted)" />
-                                        <YAxis stroke="var(--text-muted)" />
-                                        <Tooltip
-                                            contentStyle={{
-                                                backgroundColor: 'rgba(15, 23, 42, 0.95)',
-                                                borderRadius: '0.75rem',
-                                                border: '1px solid var(--glass-border)',
-                                            }}
-                                        />
-                                        <Legend />
-                                        <Area type="monotone" dataKey="pagesSpent" name="Pages Spent" stroke="#6366f1" fill="#6366f1" fillOpacity={0.1} />
-                                        <Area type="monotone" dataKey="rowsUsed" name="Rows Used" stroke="#ec4899" fill="#ec4899" fillOpacity={0.1} />
-                                    </AreaChart>
-                                </ResponsiveContainer>
-                            </div>
+                            {documentUsage && documentUsage.days.length > 0 ? (
+                                <div style={{ height: 400 }}>
+                                    <ResponsiveContainer>
+                                        <AreaChart data={documentUsage.days}>
+                                            <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
+                                            <XAxis dataKey="date" stroke="var(--text-muted)" />
+                                            <YAxis stroke="var(--text-muted)" />
+                                            <Tooltip
+                                                contentStyle={{
+                                                    backgroundColor: 'rgba(15, 23, 42, 0.95)',
+                                                    borderRadius: '0.75rem',
+                                                    border: '1px solid var(--glass-border)',
+                                                }}
+                                            />
+                                            <Legend />
+                                            <Area type="monotone" dataKey="pagesSpent" name="Pages Spent" stroke="#6366f1" fill="#6366f1" fillOpacity={0.1} />
+                                            <Area type="monotone" dataKey="rowsUsed" name="Rows Used" stroke="#ec4899" fill="#ec4899" fillOpacity={0.1} />
+                                        </AreaChart>
+                                    </ResponsiveContainer>
+                                </div>
+                            ) : (
+                                <div style={{ height: 200, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)', fontSize: '0.9rem' }}>
+                                    No usage data for this period.
+                                </div>
+                            )}
                         </div>
-                    )}
                 </>
             )}
 
