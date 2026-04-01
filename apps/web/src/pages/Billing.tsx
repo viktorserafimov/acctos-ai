@@ -169,6 +169,28 @@ export default function Billing() {
     const [simulatingId, setSimulatingId] = useState<string | null>(null);
     const [simulateMsgs, setSimulateMsgs] = useState<Record<string, { type: 'error' | 'success'; text: string }>>({});
 
+    // Custom simulate state
+    const [customSimulateQty, setCustomSimulateQty] = useState<{ pages: string; rows: string }>({ pages: '', rows: '' });
+    const [customSimulating, setCustomSimulating] = useState<'pages' | 'rows' | null>(null);
+    const [customSimulateMsg, setCustomSimulateMsg] = useState<{ type: 'error' | 'success'; text: string } | null>(null);
+
+    const handleCustomSimulate = async (type: 'pages' | 'rows') => {
+        const qty = parseInt(customSimulateQty[type]);
+        if (!qty || qty <= 0) return;
+        setCustomSimulating(type);
+        setCustomSimulateMsg(null);
+        try {
+            await axios.post('/v1/billing/simulate-addon', { addonType: type, addonQuantity: qty });
+            setCustomSimulateMsg({ type: 'success', text: `+${qty.toLocaleString()} ${type} credited! Total limit increased.` });
+            setCustomSimulateQty(prev => ({ ...prev, [type]: '' }));
+            await fetchData();
+        } catch (err: any) {
+            setCustomSimulateMsg({ type: 'error', text: err.response?.data?.error?.message || 'Simulate failed' });
+        } finally {
+            setCustomSimulating(null);
+        }
+    };
+
     const handleSimulateAddon = async (tp: typeof TEST_PAYMENTS[number]) => {
         if (tp.type !== 'addon') return;
         setSimulatingId(tp.id);
@@ -560,6 +582,54 @@ export default function Billing() {
                                 </div>
                             </div>
                         ))}
+                    </div>
+
+                    {/* Custom quantity simulate */}
+                    <div style={{ marginTop: '1.25rem', padding: '1rem', background: 'rgba(99,102,241,0.06)', borderRadius: '0.75rem', border: '1px solid rgba(99,102,241,0.2)' }}>
+                        <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '0.75rem' }}>
+                            Credit any custom quantity directly (bypasses Stripe — for testing limit increases):
+                        </p>
+                        <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
+                            <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                                <input
+                                    type="number"
+                                    min="1"
+                                    placeholder="Pages qty"
+                                    value={customSimulateQty.pages}
+                                    onChange={e => setCustomSimulateQty(p => ({ ...p, pages: e.target.value }))}
+                                    style={{ width: '120px', padding: '0.5rem 0.75rem', background: 'rgba(255,255,255,0.05)', border: '1px solid var(--glass-border)', borderRadius: '0.5rem', color: 'var(--text)', fontSize: '0.85rem' }}
+                                />
+                                <button
+                                    className="btn-simulate"
+                                    disabled={!customSimulateQty.pages || customSimulating === 'pages'}
+                                    onClick={() => handleCustomSimulate('pages')}
+                                >
+                                    {customSimulating === 'pages' ? '...' : '+ Credit pages'}
+                                </button>
+                            </div>
+                            <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                                <input
+                                    type="number"
+                                    min="1"
+                                    placeholder="Rows qty"
+                                    value={customSimulateQty.rows}
+                                    onChange={e => setCustomSimulateQty(p => ({ ...p, rows: e.target.value }))}
+                                    style={{ width: '120px', padding: '0.5rem 0.75rem', background: 'rgba(255,255,255,0.05)', border: '1px solid var(--glass-border)', borderRadius: '0.5rem', color: 'var(--text)', fontSize: '0.85rem' }}
+                                />
+                                <button
+                                    className="btn-simulate"
+                                    disabled={!customSimulateQty.rows || customSimulating === 'rows'}
+                                    onClick={() => handleCustomSimulate('rows')}
+                                >
+                                    {customSimulating === 'rows' ? '...' : '+ Credit rows'}
+                                </button>
+                            </div>
+                        </div>
+                        {customSimulateMsg && (
+                            <p style={{ fontSize: '0.82rem', marginTop: '0.5rem', color: customSimulateMsg.type === 'error' ? '#ef4444' : '#22c55e' }}>
+                                {customSimulateMsg.text}
+                            </p>
+                        )}
                     </div>
                 </div>
             )}
