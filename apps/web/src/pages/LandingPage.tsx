@@ -169,14 +169,6 @@ export default function LandingPage() {
                             <ArrowRight size={18} />
                         </button>
 
-                        <div className="auth-footer">
-                            <p>
-                                {isLogin ? t.noAccount : t.haveAccount}
-                                <button type="button" onClick={() => { setIsLogin(!isLogin); setError(''); setSuccess(''); }} className="btn-link">
-                                    {isLogin ? t.createNow : t.signInInstead}
-                                </button>
-                            </p>
-                        </div>
                     </form>
                 </div>
             </div>
