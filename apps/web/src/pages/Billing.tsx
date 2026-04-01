@@ -161,18 +161,23 @@ export default function Billing() {
     const [customSimulating, setCustomSimulating] = useState<'pages' | 'rows' | null>(null);
     const [customSimulateMsg, setCustomSimulateMsg] = useState<{ type: 'error' | 'success'; text: string } | null>(null);
 
-    const handleCustomSimulate = async (type: 'pages' | 'rows') => {
+    const handleCustomSimulate = async (type: 'pages' | 'rows', action: 'add' | 'remove') => {
         const qty = parseInt(customSimulateQty[type]);
         if (!qty || qty <= 0) return;
         setCustomSimulating(type);
         setCustomSimulateMsg(null);
         try {
-            await axios.post('/v1/billing/simulate-addon', { addonType: type, addonQuantity: qty });
-            setCustomSimulateMsg({ type: 'success', text: `+${qty.toLocaleString()} ${type} credited! Total limit increased.` });
+            if (action === 'add') {
+                await axios.post('/v1/billing/simulate-addon', { addonType: type, addonQuantity: qty });
+                setCustomSimulateMsg({ type: 'success', text: `+${qty.toLocaleString()} ${type} added.` });
+            } else {
+                await axios.post('/v1/billing/remove-addon', { addonType: type, addonQuantity: qty });
+                setCustomSimulateMsg({ type: 'success', text: `-${qty.toLocaleString()} ${type} removed.` });
+            }
             setCustomSimulateQty(prev => ({ ...prev, [type]: '' }));
             await fetchData();
         } catch (err: any) {
-            setCustomSimulateMsg({ type: 'error', text: err.response?.data?.error?.message || 'Simulate failed' });
+            setCustomSimulateMsg({ type: 'error', text: err.response?.data?.error?.message || 'Failed' });
         } finally {
             setCustomSimulating(null);
         }
@@ -554,10 +559,10 @@ export default function Billing() {
                     {/* Custom quantity simulate */}
                     <div style={{ marginTop: '1.25rem', padding: '1rem', background: 'rgba(99,102,241,0.06)', borderRadius: '0.75rem', border: '1px solid rgba(99,102,241,0.2)' }}>
                         <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '0.75rem' }}>
-                            Credit any custom quantity directly (bypasses Stripe — for testing limit increases):
+                            Add or remove addon quantity directly (bypasses Stripe — for testing):
                         </p>
-                        <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
-                            <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                            <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
                                 <input
                                     type="number"
                                     min="1"
@@ -569,12 +574,20 @@ export default function Billing() {
                                 <button
                                     className="btn-simulate"
                                     disabled={!customSimulateQty.pages || customSimulating === 'pages'}
-                                    onClick={() => handleCustomSimulate('pages')}
+                                    onClick={() => handleCustomSimulate('pages', 'add')}
                                 >
-                                    {customSimulating === 'pages' ? '...' : '+ Credit pages'}
+                                    {customSimulating === 'pages' ? '...' : '+ Add pages'}
+                                </button>
+                                <button
+                                    className="btn-simulate"
+                                    disabled={!customSimulateQty.pages || customSimulating === 'pages'}
+                                    onClick={() => handleCustomSimulate('pages', 'remove')}
+                                    style={{ background: 'rgba(239,68,68,0.12)', borderColor: 'rgba(239,68,68,0.4)', color: '#ef4444' }}
+                                >
+                                    {customSimulating === 'pages' ? '...' : '− Remove pages'}
                                 </button>
                             </div>
-                            <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                            <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
                                 <input
                                     type="number"
                                     min="1"
@@ -586,9 +599,17 @@ export default function Billing() {
                                 <button
                                     className="btn-simulate"
                                     disabled={!customSimulateQty.rows || customSimulating === 'rows'}
-                                    onClick={() => handleCustomSimulate('rows')}
+                                    onClick={() => handleCustomSimulate('rows', 'add')}
                                 >
-                                    {customSimulating === 'rows' ? '...' : '+ Credit rows'}
+                                    {customSimulating === 'rows' ? '...' : '+ Add rows'}
+                                </button>
+                                <button
+                                    className="btn-simulate"
+                                    disabled={!customSimulateQty.rows || customSimulating === 'rows'}
+                                    onClick={() => handleCustomSimulate('rows', 'remove')}
+                                    style={{ background: 'rgba(239,68,68,0.12)', borderColor: 'rgba(239,68,68,0.4)', color: '#ef4444' }}
+                                >
+                                    {customSimulating === 'rows' ? '...' : '− Remove rows'}
                                 </button>
                             </div>
                         </div>

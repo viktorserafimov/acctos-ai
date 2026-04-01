@@ -608,6 +608,44 @@ router.post(
 );
 
 /**
+ * POST /v1/billing/remove-addon
+ *
+ * Admin-only. Decrements addonPagesLimit or addonRowsLimit by the given
+ * quantity (clamped to 0). Used for testing.
+ *
+ * Body: { addonType: 'pages' | 'rows', addonQuantity: number }
+ */
+router.post(
+    '/remove-addon',
+    requireRole('ORG_OWNER', 'ADMIN'),
+    async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+        try {
+            const prisma: PrismaClient = req.app.locals.prisma;
+            const tenantId = req.user!.tenantId;
+
+            if (!tenantId) return next(createError('No tenant selected', 400, 'NO_TENANT'));
+
+            const { addonType, addonQuantity } = req.body as { addonType?: string; addonQuantity?: number };
+
+            if ((addonType !== 'pages' && addonType !== 'rows') || !addonQuantity || addonQuantity <= 0) {
+                return next(createError('Provide addonType ("pages" or "rows") and a positive addonQuantity', 400, 'VALIDATION_ERROR'));
+            }
+
+            const field = addonType === 'pages' ? 'addonPagesLimit' : 'addonRowsLimit';
+            const current = await (prisma.tenant as any).findUnique({ where: { id: tenantId }, select: { [field]: true } });
+            const newValue = Math.max(0, (current?.[field] ?? 0) - addonQuantity);
+
+            await (prisma.tenant as any).update({ where: { id: tenantId }, data: { [field]: newValue } });
+
+            console.log(`[Remove Addon] tenant=${tenantId}, type=${addonType}, qty=${addonQuantity}, new=${newValue}`);
+            res.json({ success: true, addonType, [field]: newValue });
+        } catch (error) {
+            next(error);
+        }
+    }
+);
+
+/**
  * POST /v1/billing/reset-usage
  *
  * Admin-only. Deletes ALL DocumentUsageEvent and DocumentUsageAggregate
