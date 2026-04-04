@@ -668,24 +668,29 @@ router.post(
             }
 
             // ── Snapshot by calendar month BEFORE deleting (permanent history) ──
-            const aggregatesToSnapshot = await prisma.documentUsageAggregate.findMany({
-                where: { customerId: tenantId },
-            });
-            const byMonth: Record<string, { year: number; month: number; pages: number; rows: number }> = {};
-            for (const agg of aggregatesToSnapshot) {
-                const year = agg.date.getUTCFullYear();
-                const month = agg.date.getUTCMonth() + 1;
-                const key = `${year}-${month}`;
-                if (!byMonth[key]) byMonth[key] = { year, month, pages: 0, rows: 0 };
-                byMonth[key].pages += agg.pagesSpent;
-                byMonth[key].rows += agg.rowsUsed;
-            }
-            for (const snap of Object.values(byMonth)) {
-                await (prisma as any).monthlyUsageSnapshot.upsert({
-                    where: { tenantId_year_month: { tenantId, year: snap.year, month: snap.month } },
-                    create: { tenantId, year: snap.year, month: snap.month, pagesSpent: snap.pages, rowsUsed: snap.rows },
-                    update: { pagesSpent: { increment: snap.pages }, rowsUsed: { increment: snap.rows } },
+            // Wrapped in try/catch — monthly_usage_snapshots table may not exist yet
+            try {
+                const aggregatesToSnapshot = await prisma.documentUsageAggregate.findMany({
+                    where: { customerId: tenantId },
                 });
+                const byMonth: Record<string, { year: number; month: number; pages: number; rows: number }> = {};
+                for (const agg of aggregatesToSnapshot) {
+                    const year = agg.date.getUTCFullYear();
+                    const month = agg.date.getUTCMonth() + 1;
+                    const key = `${year}-${month}`;
+                    if (!byMonth[key]) byMonth[key] = { year, month, pages: 0, rows: 0 };
+                    byMonth[key].pages += agg.pagesSpent;
+                    byMonth[key].rows += agg.rowsUsed;
+                }
+                for (const snap of Object.values(byMonth)) {
+                    await (prisma as any).monthlyUsageSnapshot.upsert({
+                        where: { tenantId_year_month: { tenantId, year: snap.year, month: snap.month } },
+                        create: { tenantId, year: snap.year, month: snap.month, pagesSpent: snap.pages, rowsUsed: snap.rows },
+                        update: { pagesSpent: { increment: snap.pages }, rowsUsed: { increment: snap.rows } },
+                    });
+                }
+            } catch (e: any) {
+                console.warn('[Reset Usage] Snapshot skipped — DB migration pending?', e.message?.split('\n')[0]);
             }
 
             // Start a fresh billing period at UTC midnight (to align with @db.Date field)

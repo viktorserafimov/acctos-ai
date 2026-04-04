@@ -253,8 +253,9 @@ export default function Dashboard() {
             await axios.post('/v1/billing/reset-usage');
             // Refresh both tabs so all views show 0
             await Promise.all([fetchDocumentUsage(), fetchData()]);
-        } catch {
-            alert(t.resetFailed);
+        } catch (err: any) {
+            const detail = err.response?.data?.error?.message || err.message || '';
+            alert(detail ? `${t.resetFailed}\n\n${detail}` : t.resetFailed);
         } finally {
             setResettingUsage(false);
         }
