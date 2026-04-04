@@ -811,6 +811,22 @@ export default function Dashboard() {
                                     >Previous month</button>
                                 </div>
                             </div>
+                            {documentUsage && documentUsage.days.length > 0 && (() => {
+                                const totalPages = documentUsage.days.reduce((s, d) => s + (d.pagesSpent ?? 0), 0);
+                                const totalRows  = documentUsage.days.reduce((s, d) => s + (d.rowsUsed  ?? 0), 0);
+                                return (
+                                    <div style={{ display: 'flex', gap: '1rem', marginBottom: '1.25rem', flexWrap: 'wrap' }}>
+                                        <div style={{ flex: 1, minWidth: 140, background: 'rgba(99,102,241,0.08)', border: '1px solid rgba(99,102,241,0.2)', borderRadius: '0.75rem', padding: '0.75rem 1rem' }}>
+                                            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '0.25rem' }}>Total pages</div>
+                                            <div style={{ fontSize: '1.4rem', fontWeight: 700, color: '#6366f1' }}>{totalPages.toLocaleString()}</div>
+                                        </div>
+                                        <div style={{ flex: 1, minWidth: 140, background: 'rgba(236,72,153,0.08)', border: '1px solid rgba(236,72,153,0.2)', borderRadius: '0.75rem', padding: '0.75rem 1rem' }}>
+                                            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '0.25rem' }}>Total rows</div>
+                                            <div style={{ fontSize: '1.4rem', fontWeight: 700, color: '#ec4899' }}>{totalRows.toLocaleString()}</div>
+                                        </div>
+                                    </div>
+                                );
+                            })()}
                             {documentUsage && documentUsage.days.length > 0 ? (
                                 <div style={{ height: 400 }}>
                                     <ResponsiveContainer>
