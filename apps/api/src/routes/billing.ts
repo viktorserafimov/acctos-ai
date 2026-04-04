@@ -259,7 +259,7 @@ router.get('/usage-status', async (req: AuthenticatedRequest, res: Response, nex
         }
 
         const periodStart = tenant.lastResetAt
-            ? (() => { const d = new Date(tenant.lastResetAt); d.setUTCHours(0, 0, 0, 0); return d; })()
+            ? new Date(tenant.lastResetAt)
             : getExpectedResetDate();
 
         const usage = await getCurrentPeriodUsage(prisma, tenantId, periodStart);
@@ -516,7 +516,7 @@ router.put(
                 select: { lastResetAt: true },
             });
             const periodStart = tenant?.lastResetAt
-                ? (() => { const d = new Date(tenant.lastResetAt); d.setUTCHours(0, 0, 0, 0); return d; })()
+                ? new Date(tenant.lastResetAt)
                 : getExpectedResetDate();
 
             // Get current usage so we can clamp the delta
@@ -693,9 +693,10 @@ router.post(
                 console.warn('[Reset Usage] Snapshot skipped — DB migration pending?', e.message?.split('\n')[0]);
             }
 
-            // Start a fresh billing period at UTC midnight (to align with @db.Date field)
+            // Store the exact reset timestamp so that today's pre-reset
+            // aggregate rows (stored as DATE = today midnight) fall *before*
+            // this value and are excluded from the new period's usage query.
             const resetDate = new Date();
-            resetDate.setUTCHours(0, 0, 0, 0);
 
             // Record the new period start. scenariosPaused is cleared below,
             // only after resumeAllScenarios() has been attempted.

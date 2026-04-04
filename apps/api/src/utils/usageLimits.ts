@@ -293,7 +293,7 @@ export async function checkAndResumeIfPossible(
         if (!tenant || !tenant.scenariosPaused) return false;
 
         const periodStart = tenant.lastResetAt
-            ? (() => { const d = new Date(tenant.lastResetAt); d.setUTCHours(0, 0, 0, 0); return d; })()
+            ? new Date(tenant.lastResetAt)
             : getExpectedResetDate();
 
         const usage = await getCurrentPeriodUsage(prisma, tenantId, periodStart);
@@ -349,7 +349,7 @@ export async function checkAndPauseIfNeeded(
         if (!tenant) return false;
 
         const periodStart = tenant.lastResetAt
-            ? (() => { const d = new Date(tenant.lastResetAt); d.setUTCHours(0, 0, 0, 0); return d; })()
+            ? new Date(tenant.lastResetAt)
             : getExpectedResetDate();
 
         const usage = await getCurrentPeriodUsage(prisma, tenantId, periodStart);
