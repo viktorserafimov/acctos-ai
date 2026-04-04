@@ -71,9 +71,15 @@ export async function applyMonthlyResetIfNeeded(
                 addonPagesLimit: 0,
                 addonRowsLimit: 0,
                 lastResetAt: expectedReset,
-                limitWarningFiredAt: null,
             },
         });
+        // Clear warning flag if column exists (added in later migration)
+        try {
+            await (prisma.tenant as any).update({
+                where: { id: tenantId },
+                data: { limitWarningFiredAt: null },
+            });
+        } catch { /* column may not exist yet */ }
 
         if (isSubscribed && tenant.scenariosPaused) {
             try {
