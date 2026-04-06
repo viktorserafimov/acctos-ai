@@ -14,6 +14,7 @@ const documentUsageSchema = z.object({
     customerId: z.string().optional(),
     pagesSpent: z.number().int().min(0),
     rowsUsed: z.number().int().min(0),
+    documentsHandled: z.number().int().min(0).optional().default(0),
     jobId: z.string().optional(),
     scenarioId: z.string().optional(),
     scenarioName: z.string().optional(),
@@ -70,6 +71,7 @@ router.post(
                         idempotencyKey,
                         pagesSpent: data.pagesSpent,
                         rowsUsed: data.rowsUsed,
+                        documentsHandled: data.documentsHandled,
                         jobId: data.jobId,
                         scenarioId: data.scenarioId,
                         scenarioName: data.scenarioName,
@@ -96,11 +98,13 @@ router.post(
                         date: eventDate,
                         pagesSpent: data.pagesSpent,
                         rowsUsed: data.rowsUsed,
+                        documentsHandled: data.documentsHandled,
                         eventCount: 1,
                     },
                     update: {
                         pagesSpent: { increment: data.pagesSpent },
                         rowsUsed: { increment: data.rowsUsed },
+                        documentsHandled: { increment: data.documentsHandled },
                         eventCount: { increment: 1 },
                     },
                 });
@@ -182,6 +186,7 @@ router.get(
             const totals = {
                 pagesSpent: aggregates.reduce((sum: number, agg: { pagesSpent: number }) => sum + agg.pagesSpent, 0),
                 rowsUsed: aggregates.reduce((sum: number, agg: { rowsUsed: number }) => sum + agg.rowsUsed, 0),
+                documentsHandled: aggregates.reduce((sum: number, agg: { documentsHandled: number }) => sum + agg.documentsHandled, 0),
             };
 
             // Format response
@@ -189,10 +194,11 @@ router.get(
                 customerId,
                 from: from || null,
                 to: to || null,
-                days: aggregates.map((agg: { date: Date; pagesSpent: number; rowsUsed: number }) => ({
+                days: aggregates.map((agg: { date: Date; pagesSpent: number; rowsUsed: number; documentsHandled: number }) => ({
                     date: agg.date.toISOString().split('T')[0],
                     pagesSpent: agg.pagesSpent,
                     rowsUsed: agg.rowsUsed,
+                    documentsHandled: agg.documentsHandled,
                 })),
                 totals,
             });

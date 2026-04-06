@@ -97,17 +97,18 @@ model UsageAggregate {
 }
 
 model DocumentUsageEvent {
-  id             String   @id @default(cuid())
-  customerId     String
-  idempotencyKey String
-  pagesSpent     Int
-  rowsUsed       Int
-  jobId          String?
-  scenarioId     String?
-  scenarioName   String?
-  timestamp      DateTime @default(now())
-  createdAt      DateTime @default(now())
-  tenant         Tenant   @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  id               String   @id @default(cuid())
+  customerId       String
+  idempotencyKey   String
+  pagesSpent       Int
+  rowsUsed         Int
+  documentsHandled Int      @default(0)
+  jobId            String?
+  scenarioId       String?
+  scenarioName     String?
+  timestamp        DateTime @default(now())
+  createdAt        DateTime @default(now())
+  tenant           Tenant   @relation(fields: [customerId], references: [id], onDelete: Cascade)
 
   @@unique([customerId, idempotencyKey])
   @@index([customerId, timestamp])
@@ -116,12 +117,13 @@ model DocumentUsageEvent {
 }
 
 model DocumentUsageAggregate {
-  id         String   @id @default(cuid())
-  customerId String
-  date       DateTime @db.Date
-  pagesSpent Int      @default(0)
-  rowsUsed   Int      @default(0)
-  eventCount Int      @default(0)
+  id               String   @id @default(cuid())
+  customerId       String
+  date             DateTime @db.Date
+  pagesSpent       Int      @default(0)
+  rowsUsed         Int      @default(0)
+  documentsHandled Int      @default(0)
+  eventCount       Int      @default(0)
 
   @@unique([customerId, date])
   @@index([customerId, date])
@@ -129,14 +131,15 @@ model DocumentUsageAggregate {
 }
 
 model MonthlyUsageSnapshot {
-  id         String   @id @default(cuid())
-  tenantId   String
-  year       Int
-  month      Int
-  pagesSpent Int      @default(0)
-  rowsUsed   Int      @default(0)
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  id               String   @id @default(cuid())
+  tenantId         String
+  year             Int
+  month            Int
+  pagesSpent       Int      @default(0)
+  rowsUsed         Int      @default(0)
+  documentsHandled Int      @default(0)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
 
   @@unique([tenantId, year, month])
   @@index([tenantId, year, month])

@@ -673,20 +673,21 @@ router.post(
                 const aggregatesToSnapshot = await prisma.documentUsageAggregate.findMany({
                     where: { customerId: tenantId },
                 });
-                const byMonth: Record<string, { year: number; month: number; pages: number; rows: number }> = {};
+                const byMonth: Record<string, { year: number; month: number; pages: number; rows: number; docs: number }> = {};
                 for (const agg of aggregatesToSnapshot) {
                     const year = agg.date.getUTCFullYear();
                     const month = agg.date.getUTCMonth() + 1;
                     const key = `${year}-${month}`;
-                    if (!byMonth[key]) byMonth[key] = { year, month, pages: 0, rows: 0 };
+                    if (!byMonth[key]) byMonth[key] = { year, month, pages: 0, rows: 0, docs: 0 };
                     byMonth[key].pages += agg.pagesSpent;
                     byMonth[key].rows += agg.rowsUsed;
+                    byMonth[key].docs += (agg as any).documentsHandled ?? 0;
                 }
                 for (const snap of Object.values(byMonth)) {
                     await (prisma as any).monthlyUsageSnapshot.upsert({
                         where: { tenantId_year_month: { tenantId, year: snap.year, month: snap.month } },
-                        create: { tenantId, year: snap.year, month: snap.month, pagesSpent: snap.pages, rowsUsed: snap.rows },
-                        update: { pagesSpent: { increment: snap.pages }, rowsUsed: { increment: snap.rows } },
+                        create: { tenantId, year: snap.year, month: snap.month, pagesSpent: snap.pages, rowsUsed: snap.rows, documentsHandled: snap.docs },
+                        update: { pagesSpent: { increment: snap.pages }, rowsUsed: { increment: snap.rows }, documentsHandled: { increment: snap.docs } },
                     });
                 }
             } catch (e: any) {

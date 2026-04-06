@@ -242,6 +242,7 @@ router.get('/document-usage', async (req: AuthenticatedRequest, res: Response, n
         const totals = {
             pagesSpent: aggregates.reduce((sum: number, agg: { pagesSpent: number }) => sum + agg.pagesSpent, 0),
             rowsUsed: aggregates.reduce((sum: number, agg: { rowsUsed: number }) => sum + agg.rowsUsed, 0),
+            documentsHandled: aggregates.reduce((sum: number, agg: { documentsHandled: number }) => sum + agg.documentsHandled, 0),
         };
 
         // Format response
@@ -249,10 +250,11 @@ router.get('/document-usage', async (req: AuthenticatedRequest, res: Response, n
             customerId: tenantId,
             from: from || null,
             to: to || null,
-            days: aggregates.map((agg: { date: Date; pagesSpent: number; rowsUsed: number }) => ({
+            days: aggregates.map((agg: { date: Date; pagesSpent: number; rowsUsed: number; documentsHandled: number }) => ({
                 date: agg.date.toISOString().split('T')[0],
                 pagesSpent: agg.pagesSpent,
                 rowsUsed: agg.rowsUsed,
+                documentsHandled: agg.documentsHandled,
             })),
             totals,
         });
@@ -372,7 +374,7 @@ router.get('/monthly-history', requireRole(...ADMIN_ROLES), async (req: Authenti
 
         const currentAgg = await prisma.documentUsageAggregate.aggregate({
             where: { customerId: tenantId, date: { gte: currentMonthStart } },
-            _sum: { pagesSpent: true, rowsUsed: true },
+            _sum: { pagesSpent: true, rowsUsed: true, documentsHandled: true },
         });
 
         const months = snapshots.map((s: any) => ({
@@ -381,6 +383,7 @@ router.get('/monthly-history', requireRole(...ADMIN_ROLES), async (req: Authenti
             monthLabel: `${MONTH_NAMES[s.month - 1]} ${s.year}`,
             pagesSpent: s.pagesSpent,
             rowsUsed: s.rowsUsed,
+            documentsHandled: s.documentsHandled ?? 0,
             isCurrent: s.year === currentYear && s.month === currentMonth,
         }));
 
@@ -391,6 +394,7 @@ router.get('/monthly-history', requireRole(...ADMIN_ROLES), async (req: Authenti
             monthLabel: `${MONTH_NAMES[currentMonth - 1]} ${currentYear}`,
             pagesSpent: currentAgg._sum.pagesSpent ?? 0,
             rowsUsed: currentAgg._sum.rowsUsed ?? 0,
+            documentsHandled: (currentAgg._sum as any).documentsHandled ?? 0,
             isCurrent: true,
         };
         const existingIdx = months.findIndex((m: any) => m.year === currentYear && m.month === currentMonth);

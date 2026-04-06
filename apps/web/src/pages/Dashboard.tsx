@@ -43,10 +43,12 @@ interface DocumentUsageData {
         date: string;
         pagesSpent: number;
         rowsUsed: number;
+        documentsHandled: number;
     }>;
     totals: {
         pagesSpent: number;
         rowsUsed: number;
+        documentsHandled: number;
     };
 }
 
@@ -68,7 +70,7 @@ export default function Dashboard() {
     const [customDaysError, setCustomDaysError] = useState('');
     const [activeDays, setActiveDays] = useState(30);
     const [infraDocUsage, setInfraDocUsage] = useState<{ pagesSpent: number; rowsUsed: number } | null>(null);
-    type MonthlyEntry = { year: number; month: number; monthLabel: string; pagesSpent: number; rowsUsed: number; isCurrent: boolean };
+    type MonthlyEntry = { year: number; month: number; monthLabel: string; pagesSpent: number; rowsUsed: number; documentsHandled: number; isCurrent: boolean };
     const [monthlyHistory, setMonthlyHistory] = useState<MonthlyEntry[]>([]);
 
     // Settings State
@@ -677,6 +679,7 @@ export default function Dashboard() {
                                         <th>{t.month}</th>
                                         <th>{t.pdfPages}</th>
                                         <th>{t.excelRows}</th>
+                                        <th>Documents</th>
                                         <th></th>
                                     </tr>
                                 </thead>
@@ -686,6 +689,7 @@ export default function Dashboard() {
                                             <td>{m.monthLabel}</td>
                                             <td>{m.pagesSpent.toLocaleString()}</td>
                                             <td>{m.rowsUsed.toLocaleString()}</td>
+                                            <td>{(m.documentsHandled ?? 0).toLocaleString()}</td>
                                             <td>{m.isCurrent && <span className="current-badge">{t.current}</span>}</td>
                                         </tr>
                                     ))}
@@ -814,6 +818,7 @@ export default function Dashboard() {
                             {documentUsage && documentUsage.days.length > 0 && (() => {
                                 const totalPages = documentUsage.days.reduce((s, d) => s + (d.pagesSpent ?? 0), 0);
                                 const totalRows  = documentUsage.days.reduce((s, d) => s + (d.rowsUsed  ?? 0), 0);
+                                const totalDocs  = documentUsage.days.reduce((s, d) => s + (d.documentsHandled ?? 0), 0);
                                 return (
                                     <div style={{ display: 'flex', gap: '1rem', marginBottom: '1.25rem', flexWrap: 'wrap' }}>
                                         <div style={{ flex: 1, minWidth: 140, background: 'rgba(99,102,241,0.08)', border: '1px solid rgba(99,102,241,0.2)', borderRadius: '0.75rem', padding: '0.75rem 1rem' }}>
@@ -823,6 +828,10 @@ export default function Dashboard() {
                                         <div style={{ flex: 1, minWidth: 140, background: 'rgba(236,72,153,0.08)', border: '1px solid rgba(236,72,153,0.2)', borderRadius: '0.75rem', padding: '0.75rem 1rem' }}>
                                             <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '0.25rem' }}>Total rows</div>
                                             <div style={{ fontSize: '1.4rem', fontWeight: 700, color: '#ec4899' }}>{totalRows.toLocaleString()}</div>
+                                        </div>
+                                        <div style={{ flex: 1, minWidth: 140, background: 'rgba(16,185,129,0.08)', border: '1px solid rgba(16,185,129,0.2)', borderRadius: '0.75rem', padding: '0.75rem 1rem' }}>
+                                            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '0.25rem' }}>Documents handled</div>
+                                            <div style={{ fontSize: '1.4rem', fontWeight: 700, color: '#10b981' }}>{totalDocs.toLocaleString()}</div>
                                         </div>
                                     </div>
                                 );
@@ -844,6 +853,7 @@ export default function Dashboard() {
                                             <Legend />
                                             <Area type="monotone" dataKey="pagesSpent" name="Pages Spent" stroke="#6366f1" fill="#6366f1" fillOpacity={0.1} />
                                             <Area type="monotone" dataKey="rowsUsed" name="Rows Used" stroke="#ec4899" fill="#ec4899" fillOpacity={0.1} />
+                                            <Area type="monotone" dataKey="documentsHandled" name="Documents Handled" stroke="#10b981" fill="#10b981" fillOpacity={0.1} />
                                         </AreaChart>
                                     </ResponsiveContainer>
                                 </div>
