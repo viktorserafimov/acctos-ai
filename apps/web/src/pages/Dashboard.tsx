@@ -736,6 +736,20 @@ export default function Dashboard() {
                     )}
 
                     <div className="stats-grid">
+                        {/* Documents Handled card */}
+                        <div className="card">
+                            <div className="card-title">
+                                <h3 style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}><CheckCircle size={18} /> Documents Handled</h3>
+                                <Brain size={20} color="#10b981" />
+                            </div>
+                            <div className="doc-usage-row">
+                                <span className="doc-usage-current" style={{ color: '#10b981' }}>{(documentUsage?.totals?.documentsHandled ?? 0).toLocaleString()}</span>
+                            </div>
+                            <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginTop: '0.75rem' }}>
+                                Documents processed through the system in the selected period
+                            </p>
+                        </div>
+
                         {/* Pages card */}
                         <div className="card">
                             <div className="card-title">
