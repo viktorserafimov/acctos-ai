@@ -293,7 +293,7 @@ router.get('/usage-status', async (req: AuthenticatedRequest, res: Response, nex
                 console.warn('[usage-status] Failed to set limitWarningFiredAt:', e.message?.split('\n')[0]);
             }
             // Fire webhook fire-and-forget
-            fetch('https://services.leadconnectorhq.com/hooks/gjXG8jJC010S1aU1N1Le/webhook-trigger/2b5db06c-ff78-4d49-9c02-2ee662148b75', {
+            fetch('https://services.leadconnectorhq.com/hooks/M8qlENxCOGWIcTpZuQvP/webhook-trigger/fdbf74ef-26a9-4f67-9684-240092b90613', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
