@@ -146,6 +146,18 @@ model MonthlyUsageSnapshot {
   @@map("monthly_usage_snapshots")
 }
 
+model DailyReport {
+  id        String   @id @default(cuid())
+  tenantId  String
+  date      DateTime @db.Date
+  content   String
+  createdAt DateTime @default(now())
+
+  @@unique([tenantId, date])
+  @@index([tenantId, date])
+  @@map("daily_reports")
+}
+
 model Subscription {
   id               String    @id @default(cuid())
   tenantId         String    @unique

@@ -15,7 +15,7 @@ const PdfIcon = ({ size = 16 }: { size?: number }) => (
 const ExcelIcon = ({ size = 16 }: { size?: number }) => (
     <img src={`${import.meta.env.BASE_URL}excel_logo.png`} alt="Excel" width={size} height={size} style={{ objectFit: 'contain', flexShrink: 0 }} />
 );
-import { Zap, FileText, TrendingUp, RefreshCw, Euro, Download, Brain, Settings, X, CheckCircle, AlertCircle } from 'lucide-react';
+import { Zap, FileText, TrendingUp, RefreshCw, Euro, Download, Brain, Settings, X, CheckCircle, AlertCircle, ChevronDown, ChevronUp } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useLanguage } from '../context/LanguageContext';
 
@@ -84,7 +84,9 @@ export default function Dashboard() {
     const [connectionStatus, setConnectionStatus] = useState<{ success: boolean; message: string } | null>(null);
     const [testingAzureConnection, setTestingAzureConnection] = useState(false);
     const [azureConnectionStatus, setAzureConnectionStatus] = useState<{ success: boolean; message: string } | null>(null);
-    const [activeTab, setActiveTab] = useState<'infrastructure' | 'document'>(isAdmin ? 'infrastructure' : 'document');
+    const [activeTab, setActiveTab] = useState<'infrastructure' | 'document' | 'reports'>(isAdmin ? 'infrastructure' : 'document');
+    const [reports, setReports] = useState<Array<{ id: string; date: string; content: string; createdAt: string }>>([]);
+    const [expandedReports, setExpandedReports] = useState<Set<string>>(new Set());
     const [syncCooldown, setSyncCooldown] = useState(false);
     const [scenarioActionLoading, setScenarioActionLoading] = useState(false);
     const [scenarioActionError, setScenarioActionError] = useState<string | null>(null);
@@ -191,6 +193,15 @@ export default function Dashboard() {
             console.error('Failed to fetch document usage data:', error);
         } finally {
             setLoading(false);
+        }
+    };
+
+    const fetchReports = async () => {
+        try {
+            const res = await axios.get('/v1/reports');
+            setReports(res.data.reports ?? []);
+        } catch (error) {
+            console.error('Failed to fetch reports:', error);
         }
     };
 
@@ -502,9 +513,89 @@ export default function Dashboard() {
                 >
                     {t.documentUsage}
                 </button>
+                <button
+                    className={`tab-btn ${activeTab === 'reports' ? 'active' : ''}`}
+                    onClick={() => { setActiveTab('reports'); fetchReports(); }}
+                >
+                    Reports
+                </button>
             </div>
 
-            {isAdmin && activeTab === 'infrastructure' ? (
+            {activeTab === 'reports' ? (
+                <>
+                    <h2 style={{ marginBottom: '1.5rem', fontSize: '1.25rem', fontWeight: 700 }}>Daily Reports</h2>
+                    <p style={{ color: 'var(--text-muted)', fontSize: '0.875rem', marginBottom: '1.5rem' }}>
+                        AI-generated summaries of daily usage. Reports are created automatically every day at midnight EET.
+                    </p>
+                    {reports.length === 0 ? (
+                        <div className="card" style={{ textAlign: 'center', padding: '2.5rem', color: 'var(--text-muted)' }}>
+                            No reports yet. The first report will appear after midnight EET tonight.
+                        </div>
+                    ) : (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.625rem' }}>
+                            {reports.map(report => {
+                                const isExpanded = expandedReports.has(report.id);
+                                const dateLabel = new Date(report.date + 'T00:00:00').toLocaleDateString('en-GB', {
+                                    day: 'numeric', month: 'long', year: 'numeric',
+                                });
+                                return (
+                                    <div key={report.id} className="card" style={{ padding: 0, overflow: 'hidden' }}>
+                                        {/* Header — always visible, click to expand */}
+                                        <div
+                                            onClick={() => setExpandedReports(prev => {
+                                                const next = new Set(prev);
+                                                if (next.has(report.id)) next.delete(report.id);
+                                                else next.add(report.id);
+                                                return next;
+                                            })}
+                                            style={{
+                                                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                                                padding: '0.875rem 1.25rem', cursor: 'pointer', userSelect: 'none',
+                                            }}
+                                        >
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem' }}>
+                                                <FileText size={15} color="var(--text-muted)" />
+                                                <span style={{ fontWeight: 600, fontSize: '0.95rem' }}>{dateLabel}</span>
+                                            </div>
+                                            <ChevronDown
+                                                size={16}
+                                                color="var(--text-muted)"
+                                                style={{ transform: isExpanded ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.2s ease' }}
+                                            />
+                                        </div>
+
+                                        {/* Body — visible when expanded */}
+                                        {isExpanded && (
+                                            <div style={{ borderTop: '1px solid var(--glass-border)', padding: '1rem 1.25rem 0.75rem' }}>
+                                                <div style={{ whiteSpace: 'pre-line', fontSize: '0.9rem', lineHeight: 1.75, color: 'var(--text-primary)' }}>
+                                                    {report.content}
+                                                </div>
+                                                <div style={{ display: 'flex', justifyContent: 'center', marginTop: '1rem', paddingBottom: '0.25rem' }}>
+                                                    <button
+                                                        onClick={() => setExpandedReports(prev => {
+                                                            const next = new Set(prev);
+                                                            next.delete(report.id);
+                                                            return next;
+                                                        })}
+                                                        style={{
+                                                            display: 'flex', alignItems: 'center', gap: '0.3rem',
+                                                            background: 'none', border: '1px solid var(--glass-border)',
+                                                            borderRadius: '0.5rem', padding: '0.3rem 0.75rem',
+                                                            cursor: 'pointer', color: 'var(--text-muted)', fontSize: '0.8rem',
+                                                        }}
+                                                    >
+                                                        <ChevronUp size={13} /> Collapse
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    )}
+                </>
+            ) : isAdmin && activeTab === 'infrastructure' ? (
                 <>
                     {/* Make.com scenario controls */}
                     <div className="scenario-controls">

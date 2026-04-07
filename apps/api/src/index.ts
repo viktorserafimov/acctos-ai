@@ -34,10 +34,8 @@ app.get('/health', (req, res) => {
 });
 
 import { integrationsRouter } from './routes/integrations.js';
-
-// Previous imports...
-
-// ...
+import { reportsRouter } from './routes/reports.js';
+import { startDailyReportCron } from './cron/dailyReports.js';
 
 // API Routes
 app.use('/api/auth', authRouter);
@@ -48,6 +46,10 @@ app.use('/v1/users', usersRouter);
 app.use('/v1/tickets', ticketsRouter);
 app.use('/v1/billing', billingRouter);
 app.use('/v1/integrations', integrationsRouter);
+app.use('/v1/reports', reportsRouter);
+
+// Start scheduled jobs
+startDailyReportCron(prisma);
 
 // Error handling
 app.use(errorHandler);
