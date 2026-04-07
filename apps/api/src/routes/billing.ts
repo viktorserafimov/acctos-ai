@@ -504,10 +504,10 @@ router.put(
                 return next(createError('No tenant selected', 400, 'NO_TENANT'));
             }
 
-            const { pages, rows } = req.body as { pages?: number; rows?: number };
+            const { pages, rows, docs } = req.body as { pages?: number; rows?: number; docs?: number };
 
-            if (pages === undefined && rows === undefined) {
-                return next(createError('Provide pages and/or rows delta', 400, 'VALIDATION_ERROR'));
+            if (pages === undefined && rows === undefined && docs === undefined) {
+                return next(createError('Provide pages, rows, and/or docs delta', 400, 'VALIDATION_ERROR'));
             }
 
             // Determine current billing period start
@@ -522,8 +522,18 @@ router.put(
             // Get current usage so we can clamp the delta
             const currentUsage = await getCurrentPeriodUsage(prisma as any, tenantId, periodStart);
 
+            // Get current documents handled for clamping
+            const docsAgg = docs !== undefined
+                ? await prisma.documentUsageAggregate.aggregate({
+                    where: { customerId: tenantId, date: { gte: periodStart } },
+                    _sum: { documentsHandled: true },
+                })
+                : null;
+            const currentDocs = docsAgg ? ((docsAgg._sum as any).documentsHandled ?? 0) : 0;
+
             const pagesDelta = pages !== undefined ? Math.max(-currentUsage.pages, pages) : 0;
             const rowsDelta  = rows  !== undefined ? Math.max(-currentUsage.rows,  rows)  : 0;
+            const docsDelta  = docs  !== undefined ? Math.max(-currentDocs, docs)          : 0;
 
             // Upsert today's correction into DocumentUsageAggregate
             const today = new Date();
@@ -531,20 +541,26 @@ router.put(
 
             await prisma.documentUsageAggregate.upsert({
                 where: { customerId_date: { customerId: tenantId, date: today } },
-                create: { customerId: tenantId, date: today, pagesSpent: pagesDelta, rowsUsed: rowsDelta },
+                create: { customerId: tenantId, date: today, pagesSpent: pagesDelta, rowsUsed: rowsDelta, documentsHandled: docsDelta },
                 update: {
-                    pagesSpent: { increment: pagesDelta },
-                    rowsUsed:   { increment: rowsDelta },
+                    pagesSpent:        { increment: pagesDelta },
+                    rowsUsed:          { increment: rowsDelta },
+                    documentsHandled:  { increment: docsDelta },
                 },
             });
 
             // Recalculate usage after adjustment and check pause/resume
             const newUsage = await getCurrentPeriodUsage(prisma as any, tenantId, periodStart);
+            const newDocsAgg = await prisma.documentUsageAggregate.aggregate({
+                where: { customerId: tenantId, date: { gte: periodStart } },
+                _sum: { documentsHandled: true },
+            });
+            const newDocs = (newDocsAgg._sum as any).documentsHandled ?? 0;
             try {
                 await checkAndResumeIfPossible(prisma as any, tenantId);
             } catch (_) {}
 
-            res.json({ success: true, currentPages: newUsage.pages, currentRows: newUsage.rows });
+            res.json({ success: true, currentPages: newUsage.pages, currentRows: newUsage.rows, currentDocs: newDocs });
         } catch (error) {
             next(error);
         }

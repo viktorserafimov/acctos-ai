@@ -91,6 +91,8 @@ export default function Dashboard() {
     const [scenarioActionLoading, setScenarioActionLoading] = useState(false);
     const [scenarioActionError, setScenarioActionError] = useState<string | null>(null);
     const [resettingUsage, setResettingUsage] = useState(false);
+    const [adjustDocsAmount, setAdjustDocsAmount] = useState('');
+    const [adjustingDocs, setAdjustingDocs] = useState(false);
 
     // Usage limits (for Document Usage tab)
     const [usageLimits, setUsageLimits] = useState<{
@@ -271,6 +273,22 @@ export default function Dashboard() {
             alert(detail ? `${t.resetFailed}\n\n${detail}` : t.resetFailed);
         } finally {
             setResettingUsage(false);
+        }
+    };
+
+    const handleAdjustDocs = async (sign: 1 | -1) => {
+        const amount = parseInt(adjustDocsAmount, 10);
+        if (isNaN(amount) || amount <= 0) return;
+        setAdjustingDocs(true);
+        try {
+            await axios.put('/v1/billing/adjust-credits', { docs: sign * amount });
+            setAdjustDocsAmount('');
+            await fetchDocumentUsage();
+        } catch (err: any) {
+            const detail = err.response?.data?.error?.message || err.message || '';
+            alert(detail ? `Failed to adjust documents.\n\n${detail}` : 'Failed to adjust documents.');
+        } finally {
+            setAdjustingDocs(false);
         }
     };
 
@@ -839,6 +857,45 @@ export default function Dashboard() {
                             <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginTop: '0.75rem' }}>
                                 Documents processed through the system in the selected period
                             </p>
+                            {isAdmin && (
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginTop: '1rem', flexWrap: 'wrap' }}>
+                                    <input
+                                        type="number"
+                                        min="1"
+                                        placeholder="Amount"
+                                        value={adjustDocsAmount}
+                                        onChange={(e) => setAdjustDocsAmount(e.target.value)}
+                                        disabled={adjustingDocs}
+                                        style={{
+                                            width: 80, padding: '0.3rem 0.5rem',
+                                            background: 'rgba(255,255,255,0.06)',
+                                            border: '1px solid var(--glass-border)',
+                                            borderRadius: '0.5rem', color: 'var(--text)',
+                                            fontSize: '0.85rem',
+                                        }}
+                                    />
+                                    <button
+                                        onClick={() => handleAdjustDocs(1)}
+                                        disabled={adjustingDocs || !adjustDocsAmount}
+                                        style={{
+                                            padding: '0.3rem 0.75rem', fontSize: '0.8rem',
+                                            background: 'rgba(16,185,129,0.15)',
+                                            border: '1px solid rgba(16,185,129,0.35)',
+                                            borderRadius: '0.5rem', color: '#10b981', cursor: 'pointer',
+                                        }}
+                                    >+ Add</button>
+                                    <button
+                                        onClick={() => handleAdjustDocs(-1)}
+                                        disabled={adjustingDocs || !adjustDocsAmount}
+                                        style={{
+                                            padding: '0.3rem 0.75rem', fontSize: '0.8rem',
+                                            background: 'rgba(239,68,68,0.1)',
+                                            border: '1px solid rgba(239,68,68,0.3)',
+                                            borderRadius: '0.5rem', color: '#ef4444', cursor: 'pointer',
+                                        }}
+                                    >− Remove</button>
+                                </div>
+                            )}
                         </div>
 
                         {/* Pages card */}
