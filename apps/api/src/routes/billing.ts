@@ -772,11 +772,26 @@ router.put(
                 return next(createError('Provide status', 400, 'VALIDATION_ERROR'));
             }
 
+            // Map plan id → limits (pages + rows only — does NOT touch current usage)
+            const PLAN_LIMITS: Record<string, { pagesLimit: number; rowsLimit: number }> = {
+                starter:      { pagesLimit: 1000,  rowsLimit: 1000  },
+                professional: { pagesLimit: 5000,  rowsLimit: 5000  },
+                enterprise:   { pagesLimit: 15000, rowsLimit: 15000 },
+            };
+
             await prisma.subscription.upsert({
                 where: { tenantId },
                 create: { tenantId, status },
                 update: { status },
             });
+
+            // Update tenant limits if this is a known plan
+            if (PLAN_LIMITS[status]) {
+                await (prisma.tenant as any).update({
+                    where: { id: tenantId },
+                    data: PLAN_LIMITS[status],
+                });
+            }
 
             res.json({ success: true, status });
         } catch (error) {

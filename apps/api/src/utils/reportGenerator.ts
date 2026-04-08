@@ -73,7 +73,7 @@ Usage data:
             body: JSON.stringify({
                 model: REPORT_MODEL,
                 messages: [{ role: 'user', content: prompt }],
-                max_tokens: 500,
+                max_completion_tokens: 500,
                 temperature: 0.3,
             }),
         });

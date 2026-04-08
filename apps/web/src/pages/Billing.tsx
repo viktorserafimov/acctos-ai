@@ -270,10 +270,13 @@ export default function Billing() {
                 setRawUsage(rawRes.value.data);
             }
 
-            if (subRes.status === 'fulfilled') {
-                const sub = subRes.value.data;
-                if (sub?.status === 'active') {
-                    setCurrentTier(PRICE_ID_TO_TIER[sub.stripePriceId ?? ''] || 1);
+            if (statusRes.status === 'fulfilled') {
+                const planStatus = statusRes.value.data?.subscriptionStatus;
+                const STATUS_TO_TIER: Record<string, number> = {
+                    starter: 1, professional: 2, enterprise: 3,
+                };
+                if (planStatus && STATUS_TO_TIER[planStatus]) {
+                    setCurrentTier(STATUS_TO_TIER[planStatus]);
                 }
             }
         } catch (err) {
@@ -355,14 +358,14 @@ export default function Billing() {
                                     onChange={(e) => { if (e.target.value) handleSetPlan(e.target.value); e.target.value = ''; }}
                                     style={{
                                         fontSize: '0.78rem', padding: '0.28rem 0.6rem',
-                                        background: 'rgba(255,255,255,0.06)',
+                                        background: '#1e293b',
                                         border: '1px solid rgba(99,102,241,0.35)',
-                                        borderRadius: '0.4rem', color: 'var(--text)', cursor: 'pointer',
+                                        borderRadius: '0.4rem', color: '#e2e8f0', cursor: 'pointer',
                                     }}
                                 >
-                                    <option value="" disabled>Set plan…</option>
+                                    <option value="" disabled style={{ background: '#1e293b', color: '#e2e8f0' }}>Set plan…</option>
                                     {PLANS.map(p => (
-                                        <option key={p.id} value={p.id}>{p.name}</option>
+                                        <option key={p.id} value={p.id} style={{ background: '#1e293b', color: '#e2e8f0' }}>{p.name}</option>
                                     ))}
                                 </select>
                                 {settingPlan && <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Updating…</span>}
