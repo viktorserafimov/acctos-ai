@@ -152,6 +152,27 @@ export default function Billing() {
         }
     };
 
+    // Admin set-plan state
+    const [settingPlan, setSettingPlan] = useState(false);
+    const [setPlanMsg, setSetPlanMsg] = useState<{ type: 'error' | 'success'; text: string } | null>(null);
+
+    const handleSetPlan = async (planId: string) => {
+        const plan = PLANS.find(p => p.id === planId);
+        if (!plan) return;
+        if (!window.confirm(`Set this tenant to ${plan.name} plan?`)) return;
+        setSettingPlan(true);
+        setSetPlanMsg(null);
+        try {
+            await axios.put('/v1/billing/set-plan', { status: planId });
+            setSetPlanMsg({ type: 'success', text: `Plan updated to ${plan.name}.` });
+            await fetchData();
+        } catch (err: any) {
+            setSetPlanMsg({ type: 'error', text: err.response?.data?.error?.message || 'Failed to update plan' });
+        } finally {
+            setSettingPlan(false);
+        }
+    };
+
     // Admin simulate addon state
     const [simulatingId, setSimulatingId] = useState<string | null>(null);
     const [simulateMsgs, setSimulateMsgs] = useState<Record<string, { type: 'error' | 'success'; text: string }>>({});
@@ -318,9 +339,40 @@ export default function Billing() {
                 <div className="current-plan-header">
                     <div>
                         <h3>{t.currentPeriodUsage}</h3>
-                        <div className="status-badge" data-status="active">
-                            {t.professionalPlan}
+                        <div className="status-badge" data-status={
+                            usageStatus?.subscriptionStatus === 'enterprise' ? 'enterprise' :
+                            usageStatus?.subscriptionStatus === 'starter' ? 'starter' : 'active'
+                        }>
+                            {usageStatus?.subscriptionStatus === 'enterprise' ? t.enterprisePlan :
+                             usageStatus?.subscriptionStatus === 'starter' ? 'Starter Plan' :
+                             t.professionalPlan}
                         </div>
+                        {isAdmin && (
+                            <div style={{ marginTop: '0.6rem', display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+                                <select
+                                    disabled={settingPlan}
+                                    defaultValue=""
+                                    onChange={(e) => { if (e.target.value) handleSetPlan(e.target.value); e.target.value = ''; }}
+                                    style={{
+                                        fontSize: '0.78rem', padding: '0.28rem 0.6rem',
+                                        background: 'rgba(255,255,255,0.06)',
+                                        border: '1px solid rgba(99,102,241,0.35)',
+                                        borderRadius: '0.4rem', color: 'var(--text)', cursor: 'pointer',
+                                    }}
+                                >
+                                    <option value="" disabled>Set plan…</option>
+                                    {PLANS.map(p => (
+                                        <option key={p.id} value={p.id}>{p.name}</option>
+                                    ))}
+                                </select>
+                                {settingPlan && <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Updating…</span>}
+                                {setPlanMsg && (
+                                    <span style={{ fontSize: '0.75rem', color: setPlanMsg.type === 'success' ? '#10b981' : '#ef4444' }}>
+                                        {setPlanMsg.text}
+                                    </span>
+                                )}
+                            </div>
+                        )}
                         {us?.nextResetAt && (
                             <p className="reset-note">
                                 {t.resetsOn(formatDate(us.nextResetAt))}
@@ -772,6 +824,15 @@ export default function Billing() {
         .status-badge[data-status="active"] {
           background: rgba(16, 185, 129, 0.1);
           color: #10b981;
+        }
+        .status-badge[data-status="enterprise"] {
+          background: rgba(99, 102, 241, 0.12);
+          color: #818cf8;
+          border: 1px solid rgba(99, 102, 241, 0.3);
+        }
+        .status-badge[data-status="starter"] {
+          background: rgba(245, 158, 11, 0.1);
+          color: #f59e0b;
         }
         .quota-grid {
           display: grid;

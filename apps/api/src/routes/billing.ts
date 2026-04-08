@@ -748,4 +748,41 @@ router.post(
     }
 );
 
+/**
+ * PUT /v1/billing/set-plan
+ *
+ * Admin-only. Manually sets the subscription plan/status for the tenant.
+ * Used when a customer pays through means other than Stripe.
+ * Body: { status: 'enterprise' | 'active' | 'trialing' | string }
+ */
+router.put(
+    '/set-plan',
+    requireRole('ORG_OWNER', 'ADMIN'),
+    async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+        try {
+            const prisma: PrismaClient = req.app.locals.prisma;
+            const tenantId = req.user!.tenantId;
+
+            if (!tenantId) {
+                return next(createError('No tenant selected', 400, 'NO_TENANT'));
+            }
+
+            const { status } = req.body as { status?: string };
+            if (!status) {
+                return next(createError('Provide status', 400, 'VALIDATION_ERROR'));
+            }
+
+            await prisma.subscription.upsert({
+                where: { tenantId },
+                create: { tenantId, status },
+                update: { status },
+            });
+
+            res.json({ success: true, status });
+        } catch (error) {
+            next(error);
+        }
+    }
+);
+
 export { router as billingRouter };

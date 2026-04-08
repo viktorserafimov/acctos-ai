@@ -93,6 +93,7 @@ export default function Dashboard() {
     const [resettingUsage, setResettingUsage] = useState(false);
     const [adjustDocsAmount, setAdjustDocsAmount] = useState('');
     const [adjustingDocs, setAdjustingDocs] = useState(false);
+    const [generatingReport, setGeneratingReport] = useState(false);
 
     // Usage limits (for Document Usage tab)
     const [usageLimits, setUsageLimits] = useState<{
@@ -273,6 +274,19 @@ export default function Dashboard() {
             alert(detail ? `${t.resetFailed}\n\n${detail}` : t.resetFailed);
         } finally {
             setResettingUsage(false);
+        }
+    };
+
+    const handleGenerateReportNow = async () => {
+        setGeneratingReport(true);
+        try {
+            await axios.post('/v1/reports/generate-now');
+            await fetchReports();
+        } catch (err: any) {
+            const detail = err.response?.data?.error?.message || err.message || '';
+            alert(detail ? `Failed to generate report.\n\n${detail}` : 'Failed to generate report.');
+        } finally {
+            setGeneratingReport(false);
         }
     };
 
@@ -541,7 +555,25 @@ export default function Dashboard() {
 
             {activeTab === 'reports' ? (
                 <>
-                    <h2 style={{ marginBottom: '1.5rem', fontSize: '1.25rem', fontWeight: 700 }}>Daily Reports</h2>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1.5rem', flexWrap: 'wrap', gap: '0.75rem' }}>
+                        <h2 style={{ fontSize: '1.25rem', fontWeight: 700 }}>Daily Reports</h2>
+                        {isAdmin && (
+                            <button
+                                onClick={handleGenerateReportNow}
+                                disabled={generatingReport}
+                                style={{
+                                    display: 'flex', alignItems: 'center', gap: '0.4rem',
+                                    padding: '0.45rem 1rem', fontSize: '0.85rem',
+                                    background: 'rgba(99,102,241,0.12)',
+                                    border: '1px solid rgba(99,102,241,0.35)',
+                                    borderRadius: '0.6rem', color: '#818cf8', cursor: 'pointer',
+                                }}
+                            >
+                                <Brain size={14} />
+                                {generatingReport ? 'Generating…' : 'Generate Now (Yesterday)'}
+                            </button>
+                        )}
+                    </div>
                     <p style={{ color: 'var(--text-muted)', fontSize: '0.875rem', marginBottom: '1.5rem' }}>
                         AI-generated summaries of daily usage. Reports are created automatically every day at midnight EET.
                     </p>
