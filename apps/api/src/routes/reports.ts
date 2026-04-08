@@ -78,4 +78,41 @@ router.post(
     }
 );
 
+/**
+ * DELETE /v1/reports/:id
+ *
+ * Admin-only. Permanently deletes a daily report by ID.
+ */
+router.delete(
+    '/:id',
+    requireRole('ORG_OWNER', 'ADMIN'),
+    async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+        try {
+            const prisma: PrismaClient = req.app.locals.prisma;
+            const tenantId = req.user!.tenantId;
+            const { id } = req.params;
+
+            if (!tenantId) {
+                return next(createError('No tenant selected', 400, 'NO_TENANT'));
+            }
+
+            // Verify the report belongs to this tenant before deleting
+            const report = await (prisma as any).dailyReport.findFirst({
+                where: { id, tenantId },
+                select: { id: true },
+            });
+
+            if (!report) {
+                return next(createError('Report not found', 404, 'NOT_FOUND'));
+            }
+
+            await (prisma as any).dailyReport.delete({ where: { id } });
+
+            res.json({ success: true });
+        } catch (error) {
+            next(error);
+        }
+    }
+);
+
 export { router as reportsRouter };

@@ -94,6 +94,7 @@ export default function Dashboard() {
     const [adjustDocsAmount, setAdjustDocsAmount] = useState('');
     const [adjustingDocs, setAdjustingDocs] = useState(false);
     const [generatingReport, setGeneratingReport] = useState(false);
+    const [deletingReportId, setDeletingReportId] = useState<string | null>(null);
 
     // Usage limits (for Document Usage tab)
     const [usageLimits, setUsageLimits] = useState<{
@@ -287,6 +288,20 @@ export default function Dashboard() {
             alert(detail ? `Failed to generate report.\n\n${detail}` : 'Failed to generate report.');
         } finally {
             setGeneratingReport(false);
+        }
+    };
+
+    const handleDeleteReport = async (reportId: string) => {
+        if (!window.confirm('Delete this report? This cannot be undone.')) return;
+        setDeletingReportId(reportId);
+        try {
+            await axios.delete(`/v1/reports/${reportId}`);
+            await fetchReports();
+        } catch (err: any) {
+            const detail = err.response?.data?.error?.message || err.message || '';
+            alert(detail ? `Failed to delete report.\n\n${detail}` : 'Failed to delete report.');
+        } finally {
+            setDeletingReportId(null);
         }
     };
 
@@ -682,13 +697,22 @@ export default function Dashboard() {
                                                     ))}
                                                 </div>
 
-                                                <div style={{ display: 'flex', justifyContent: 'center', padding: '0.5rem 1.25rem 1rem' }}>
+                                                <div style={{ display: 'flex', justifyContent: 'space-between', padding: '0.5rem 1.25rem 1rem' }}>
                                                     <button
                                                         onClick={(e) => { e.stopPropagation(); setExpandedReports(prev => { const next = new Set(prev); next.delete(report.id); return next; }); }}
                                                         style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', background: 'none', border: '1px solid var(--glass-border)', borderRadius: '0.5rem', padding: '0.3rem 0.75rem', cursor: 'pointer', color: 'var(--text-muted)', fontSize: '0.8rem' }}
                                                     >
                                                         <ChevronUp size={13} /> Collapse
                                                     </button>
+                                                    {isAdmin && (
+                                                        <button
+                                                            onClick={(e) => { e.stopPropagation(); handleDeleteReport(report.id); }}
+                                                            disabled={deletingReportId === report.id}
+                                                            style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', background: 'none', border: '1px solid rgba(239,68,68,0.35)', borderRadius: '0.5rem', padding: '0.3rem 0.75rem', cursor: 'pointer', color: '#ef4444', fontSize: '0.8rem', opacity: deletingReportId === report.id ? 0.5 : 1 }}
+                                                        >
+                                                            <X size={13} /> {deletingReportId === report.id ? 'Deleting…' : 'Delete Report'}
+                                                        </button>
+                                                    )}
                                                 </div>
                                             </div>
                                         )}
