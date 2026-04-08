@@ -84,6 +84,23 @@ const TEST_PAYMENTS = [
         description: 'Simulates a Starter (£249/mo) subscription purchase',
         stripeLink: 'https://buy.stripe.com/test_28EeVd6CF4p07O7cWgcs800',
         type: 'subscription' as const,
+        planId: 'starter',
+    },
+    {
+        id: 'test_professional',
+        label: 'Professional Plan — Test Subscribe',
+        description: 'Simulates a Professional (£989/mo) subscription purchase',
+        stripeLink: null as string | null,
+        type: 'subscription' as const,
+        planId: 'professional',
+    },
+    {
+        id: 'test_enterprise',
+        label: 'Enterprise Plan — Test Subscribe',
+        description: 'Simulates an Enterprise (£2,249/mo) subscription purchase',
+        stripeLink: null as string | null,
+        type: 'subscription' as const,
+        planId: 'enterprise',
     },
     {
         id: 'test_rows_1000',
@@ -211,6 +228,21 @@ export default function Billing() {
         try {
             await axios.post('/v1/billing/simulate-addon', { addonType: tp.addonType, addonQuantity: tp.addonQuantity });
             setSimulateMsgs(prev => ({ ...prev, [tp.id]: { type: 'success', text: `+${tp.addonQuantity!.toLocaleString()} ${tp.addonType} credited!` } }));
+            await fetchData();
+        } catch (err: any) {
+            setSimulateMsgs(prev => ({ ...prev, [tp.id]: { type: 'error', text: err.response?.data?.error?.message || 'Simulate failed' } }));
+        } finally {
+            setSimulatingId(null);
+        }
+    };
+
+    const handleSimulatePlan = async (tp: typeof TEST_PAYMENTS[number]) => {
+        if (tp.type !== 'subscription') return;
+        setSimulatingId(tp.id);
+        setSimulateMsgs(prev => ({ ...prev, [tp.id]: undefined as any }));
+        try {
+            await axios.post('/v1/billing/simulate-plan', { planId: (tp as any).planId });
+            setSimulateMsgs(prev => ({ ...prev, [tp.id]: { type: 'success', text: `Plan set to ${(tp as any).planId}!` } }));
             await fetchData();
         } catch (err: any) {
             setSimulateMsgs(prev => ({ ...prev, [tp.id]: { type: 'error', text: err.response?.data?.error?.message || 'Simulate failed' } }));
@@ -471,11 +503,10 @@ export default function Billing() {
                             )}
                             {!isCurrentPlan && isLowerTier && (
                                 <a
-                                    href={plan.stripeLink}
+                                    href={`${plan.stripeLink}${activeTenant?.id ? `?client_reference_id=${activeTenant.id}` : ''}`}
                                     target="_blank"
                                     rel="noopener noreferrer"
                                     className="btn-secondary btn-plan"
-                                    onClick={() => setCurrentTier(plan.tier)}
                                 >
                                     <ExternalLink size={16} />
                                     {t.downgradeTo(plan.name)}
@@ -483,11 +514,10 @@ export default function Billing() {
                             )}
                             {!isCurrentPlan && !isLowerTier && (
                                 <a
-                                    href={plan.stripeLink}
+                                    href={`${plan.stripeLink}${activeTenant?.id ? `?client_reference_id=${activeTenant.id}` : ''}`}
                                     target="_blank"
                                     rel="noopener noreferrer"
                                     className="btn-primary btn-plan"
-                                    onClick={() => setCurrentTier(plan.tier)}
                                 >
                                     <ExternalLink size={16} />
                                     {isSubscribed ? t.upgradeTo(plan.name) : t.subscribeTo(plan.priceLabel)}
@@ -588,6 +618,15 @@ export default function Billing() {
                                     )}
                                 </div>
                                 <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', alignItems: 'flex-end' }}>
+                                    {tp.type === 'subscription' && (
+                                        <button
+                                            onClick={() => handleSimulatePlan(tp)}
+                                            disabled={simulatingId === tp.id}
+                                            className="btn-simulate"
+                                        >
+                                            {simulatingId === tp.id ? '…' : `Switch to ${(tp as any).planId}`}
+                                        </button>
+                                    )}
                                     {tp.type === 'addon' && (
                                         <button
                                             onClick={() => handleSimulateAddon(tp)}
@@ -597,15 +636,17 @@ export default function Billing() {
                                             {simulatingId === tp.id ? '...' : `+ Credit ${tp.addonQuantity!.toLocaleString()} ${tp.addonType}`}
                                         </button>
                                     )}
-                                    <a
-                                        href={`${tp.stripeLink}${activeTenant?.id ? `?client_reference_id=${activeTenant.id}` : ''}`}
-                                        target="_blank"
-                                        rel="noopener noreferrer"
-                                        className="btn-test"
-                                    >
-                                        <ExternalLink size={14} />
-                                        {t.openTestCheckout}
-                                    </a>
+                                    {tp.stripeLink && (
+                                        <a
+                                            href={`${tp.stripeLink}${activeTenant?.id ? `?client_reference_id=${activeTenant.id}` : ''}`}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            className="btn-test"
+                                        >
+                                            <ExternalLink size={14} />
+                                            {t.openTestCheckout}
+                                        </a>
+                                    )}
                                 </div>
                             </div>
                         ))}

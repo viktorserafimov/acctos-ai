@@ -397,6 +397,46 @@ router.post('/stripe-webhook', async (req: Request, res: Response, next: NextFun
             }
         }
 
+        // ── Plan limits map (shared across event handlers) ───────────────────────
+        const PLAN_LIMITS: Record<string, { pagesLimit: number; rowsLimit: number }> = {
+            starter:      { pagesLimit: 1000,  rowsLimit: 1000  },
+            professional: { pagesLimit: 5000,  rowsLimit: 5000  },
+            enterprise:   { pagesLimit: 15000, rowsLimit: 15000 },
+        };
+
+        // Map known Stripe payment link IDs → planId (extracted from URL path segment)
+        // e.g. https://buy.stripe.com/7sYdRa2dM25YfqydQgaZi0h → '7sYdRa2dM25YfqydQgaZi0h'
+        const PAYMENT_LINK_TO_PLAN: Record<string, string> = {
+            '7sYdRa2dM25YfqydQgaZi0h': 'starter',
+            '3cI4gA2dM4e60vE4fGaZi0j': 'professional',
+            'aFabJ22dM8umdiqcMcaZi0i': 'enterprise',
+        };
+
+        /** Apply a plan change to the DB for a given tenant. */
+        const applyPlanChange = async (tenantId: string, planId: string) => {
+            const limits = PLAN_LIMITS[planId];
+            if (!limits) {
+                console.warn(`[Stripe Webhook] Unknown planId: ${planId}`);
+                return;
+            }
+            await prisma.subscription.upsert({
+                where: { tenantId },
+                create: { tenantId, status: planId },
+                update: { status: planId },
+            });
+            await (prisma.tenant as any).update({
+                where: { id: tenantId },
+                data: limits,
+            });
+            // Resume scenarios if the new limits bring usage back within range
+            try {
+                await checkAndResumeIfPossible(prisma, tenantId);
+            } catch (e) {
+                console.warn('[Stripe Webhook] Auto-resume check failed after plan change:', e);
+            }
+            console.log(`[Stripe Webhook] Plan updated: tenant=${tenantId}, plan=${planId}, limits=${JSON.stringify(limits)}`);
+        };
+
         if (event.type === 'checkout.session.completed') {
             const session = event.data.object;
             const meta    = session.metadata || {};
@@ -405,7 +445,17 @@ router.post('/stripe-webhook', async (req: Request, res: Response, next: NextFun
             const addonType     = meta.addonType as 'pages' | 'rows' | undefined;
             const addonQuantity = meta.addonQuantity ? parseInt(meta.addonQuantity) : 0;
 
-            if (tenantId && addonType && addonQuantity > 0) {
+            // Resolve planId: prefer explicit metadata, fall back to payment link URL mapping
+            const paymentLinkUrl: string | undefined = (session as any).payment_link_url || (session as any).payment_link;
+            const linkKey = paymentLinkUrl ? paymentLinkUrl.split('/').pop()?.split('?')[0] : undefined;
+            const planId  = (meta.planId as string | undefined) || (linkKey ? PAYMENT_LINK_TO_PLAN[linkKey] : undefined);
+
+            if (tenantId && planId) {
+                // ── Subscription plan purchase / upgrade / downgrade ──────────────────
+                console.log(`[Stripe Webhook] Plan purchase: tenant=${tenantId}, plan=${planId}`);
+                await applyPlanChange(tenantId, planId);
+            } else if (tenantId && addonType && addonQuantity > 0) {
+                // ── Add-on purchase ───────────────────────────────────────────────────
                 console.log(`[Stripe Webhook] Add-on purchase: tenant=${tenantId}, type=${addonType}, qty=${addonQuantity}`);
 
                 const updateData: any = {};
@@ -423,14 +473,13 @@ router.post('/stripe-webhook', async (req: Request, res: Response, next: NextFun
 
                 await (prisma.tenant as any).update({ where: { id: tenantId }, data: updateData });
 
-                // Auto-resume scenarios if the new quota brings usage within limits
                 try {
                     await checkAndResumeIfPossible(prisma, tenantId);
                 } catch (e) {
                     console.warn('[Stripe Webhook] Auto-resume check failed:', e);
                 }
             } else {
-                console.warn('[Stripe Webhook] checkout.session.completed missing tenantId/addonType/addonQuantity metadata');
+                console.warn('[Stripe Webhook] checkout.session.completed — could not determine action from metadata', { tenantId, planId, addonType, addonQuantity });
             }
         }
 
@@ -561,6 +610,63 @@ router.put(
             } catch (_) {}
 
             res.json({ success: true, currentPages: newUsage.pages, currentRows: newUsage.rows, currentDocs: newDocs });
+        } catch (error) {
+            next(error);
+        }
+    }
+);
+
+/**
+ * POST /v1/billing/simulate-plan
+ *
+ * Admin-only. Applies a plan change (subscription status + limits) without
+ * requiring an actual Stripe event. Used for testing plan upgrades/downgrades.
+ *
+ * Body: { planId: 'starter' | 'professional' | 'enterprise' }
+ */
+router.post(
+    '/simulate-plan',
+    requireRole('ORG_OWNER', 'ADMIN'),
+    async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+        try {
+            const prisma: PrismaClient = req.app.locals.prisma;
+            const tenantId = req.user!.tenantId;
+
+            if (!tenantId) {
+                return next(createError('No tenant selected', 400, 'NO_TENANT'));
+            }
+
+            const { planId } = req.body as { planId?: string };
+
+            const PLAN_LIMITS: Record<string, { pagesLimit: number; rowsLimit: number }> = {
+                starter:      { pagesLimit: 1000,  rowsLimit: 1000  },
+                professional: { pagesLimit: 5000,  rowsLimit: 5000  },
+                enterprise:   { pagesLimit: 15000, rowsLimit: 15000 },
+            };
+
+            if (!planId || !PLAN_LIMITS[planId]) {
+                return next(createError('Provide planId: starter | professional | enterprise', 400, 'VALIDATION_ERROR'));
+            }
+
+            await prisma.subscription.upsert({
+                where: { tenantId },
+                create: { tenantId, status: planId },
+                update: { status: planId },
+            });
+
+            await (prisma.tenant as any).update({
+                where: { id: tenantId },
+                data: PLAN_LIMITS[planId],
+            });
+
+            try {
+                await checkAndResumeIfPossible(prisma, tenantId);
+            } catch (e) {
+                console.warn('[Simulate Plan] Auto-resume check failed:', e);
+            }
+
+            console.log(`[Simulate Plan] tenant=${tenantId}, plan=${planId}, limits=${JSON.stringify(PLAN_LIMITS[planId])}`);
+            res.json({ success: true, planId, ...PLAN_LIMITS[planId] });
         } catch (error) {
             next(error);
         }
