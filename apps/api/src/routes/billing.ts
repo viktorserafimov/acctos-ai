@@ -10,6 +10,7 @@ import {
     resumeAllScenarios,
     pauseAllScenarios,
     checkAndResumeIfPossible,
+    DEFAULT_BILLING_RESET_DAY,
 } from '../utils/usageLimits.js';
 
 const router = Router();
@@ -243,6 +244,7 @@ router.get('/usage-status', async (req: AuthenticatedRequest, res: Response, nex
                 pagesLimit: true, rowsLimit: true,
                 addonPagesLimit: true, addonRowsLimit: true,
                 scenariosPaused: true, lastResetAt: true,
+                billingResetDay: true,
             },
         });
 
@@ -258,9 +260,10 @@ router.get('/usage-status', async (req: AuthenticatedRequest, res: Response, nex
             tenant.rowsLimit  = 5000;
         }
 
+        const resetDay = tenant.billingResetDay ?? DEFAULT_BILLING_RESET_DAY;
         const periodStart = tenant.lastResetAt
             ? new Date(tenant.lastResetAt)
-            : getExpectedResetDate();
+            : getExpectedResetDate(resetDay);
 
         const usage = await getCurrentPeriodUsage(prisma, tenantId, periodStart);
 
@@ -350,9 +353,10 @@ router.get('/usage-status', async (req: AuthenticatedRequest, res: Response, nex
             rowsRemaining,
             limitWarning:     isLow,
             scenariosPaused:  tenant.scenariosPaused ?? false,
-            lastResetAt:      periodStart.toISOString(),
-            nextResetAt:      getNextResetDate().toISOString(),
+            lastResetAt:        periodStart.toISOString(),
+            nextResetAt:        getNextResetDate(resetDay).toISOString(),
             subscriptionStatus: subscription?.status || 'trialing',
+            billingResetDay:    resetDay,
         });
     } catch (error) {
         next(error);
@@ -900,6 +904,55 @@ router.put(
             }
 
             res.json({ success: true, status });
+        } catch (error) {
+            next(error);
+        }
+    }
+);
+
+/**
+ * PUT /v1/billing/reset-day
+ *
+ * Admin-only. Changes the day of month on which the billing period resets.
+ * Also updates lastResetAt so the new period starts from the most recent
+ * occurrence of that day (prevents an immediate double-reset).
+ *
+ * Body: { day: number }  — 1–28
+ */
+router.put(
+    '/reset-day',
+    requireRole('ORG_OWNER', 'ADMIN'),
+    async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+        try {
+            const prisma: PrismaClient = req.app.locals.prisma;
+            const tenantId = req.user!.tenantId;
+
+            if (!tenantId) {
+                return next(createError('No tenant selected', 400, 'NO_TENANT'));
+            }
+
+            const { day } = req.body as { day?: number };
+            if (!day || !Number.isInteger(day) || day < 1 || day > 28) {
+                return next(createError('Provide day between 1 and 28', 400, 'VALIDATION_ERROR'));
+            }
+
+            // Compute the most recent occurrence of this day so that usage
+            // accumulated since then is correctly attributed to the new period.
+            const newPeriodStart = getExpectedResetDate(day);
+
+            await (prisma.tenant as any).update({
+                where: { id: tenantId },
+                data: { billingResetDay: day, lastResetAt: newPeriodStart },
+            });
+
+            console.log(`[Reset Day] Tenant ${tenantId}: billing reset day set to ${day}, period starts ${newPeriodStart.toISOString()}`);
+
+            res.json({
+                success: true,
+                billingResetDay: day,
+                lastResetAt: newPeriodStart.toISOString(),
+                nextResetAt: getNextResetDate(day).toISOString(),
+            });
         } catch (error) {
             next(error);
         }

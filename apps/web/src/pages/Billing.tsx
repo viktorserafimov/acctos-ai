@@ -130,6 +130,7 @@ interface UsageStatus {
     lastResetAt: string;
     nextResetAt: string;
     subscriptionStatus: string;
+    billingResetDay: number;
 }
 
 export default function Billing() {
@@ -172,6 +173,32 @@ export default function Billing() {
     // Admin set-plan state
     const [settingPlan, setSettingPlan] = useState(false);
     const [setPlanMsg, setSetPlanMsg] = useState<{ type: 'error' | 'success'; text: string } | null>(null);
+
+    // Admin billing reset day state
+    const [resetDayInput, setResetDayInput] = useState('');
+    const [settingResetDay, setSettingResetDay] = useState(false);
+    const [resetDayMsg, setResetDayMsg] = useState<{ type: 'error' | 'success'; text: string } | null>(null);
+
+    const handleSetResetDay = async (e: React.FormEvent) => {
+        e.preventDefault();
+        const day = parseInt(resetDayInput);
+        if (!day || day < 1 || day > 28) {
+            setResetDayMsg({ type: 'error', text: 'Enter a day between 1 and 28.' });
+            return;
+        }
+        setSettingResetDay(true);
+        setResetDayMsg(null);
+        try {
+            const res = await axios.put('/v1/billing/reset-day', { day });
+            setResetDayMsg({ type: 'success', text: `Reset day set to ${day}th. Next reset: ${formatDate(res.data.nextResetAt)}` });
+            setResetDayInput('');
+            await fetchData();
+        } catch (err: any) {
+            setResetDayMsg({ type: 'error', text: err.response?.data?.error?.message || 'Failed to update reset day' });
+        } finally {
+            setSettingResetDay(false);
+        }
+    };
 
     const handleSetPlan = async (planId: string) => {
         const plan = PLANS.find(p => p.id === planId);
@@ -411,7 +438,38 @@ export default function Billing() {
                         {us?.nextResetAt && (
                             <p className="reset-note">
                                 {t.resetsOn(formatDate(us.nextResetAt))}
+                                {us.billingResetDay && (
+                                    <span style={{ color: 'var(--text-muted)', marginLeft: '0.4rem', fontSize: '0.8rem' }}>
+                                        (day {us.billingResetDay} each month)
+                                    </span>
+                                )}
                             </p>
+                        )}
+                        {isAdmin && (
+                            <form onSubmit={handleSetResetDay} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginTop: '0.5rem', flexWrap: 'wrap' }}>
+                                <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Reset day:</span>
+                                <input
+                                    type="number"
+                                    min={1}
+                                    max={28}
+                                    value={resetDayInput}
+                                    onChange={e => setResetDayInput(e.target.value)}
+                                    placeholder={String(us?.billingResetDay ?? 4)}
+                                    style={{ width: '4rem', padding: '0.25rem 0.5rem', background: 'rgba(255,255,255,0.05)', border: '1px solid var(--glass-border)', borderRadius: '0.4rem', color: 'var(--text)', fontSize: '0.85rem', outline: 'none' }}
+                                />
+                                <button
+                                    type="submit"
+                                    disabled={settingResetDay || !resetDayInput}
+                                    style={{ padding: '0.25rem 0.75rem', fontSize: '0.8rem', background: 'rgba(99,102,241,0.15)', border: '1px solid rgba(99,102,241,0.35)', borderRadius: '0.4rem', color: '#818cf8', cursor: 'pointer' }}
+                                >
+                                    {settingResetDay ? 'Saving…' : 'Update'}
+                                </button>
+                                {resetDayMsg && (
+                                    <span style={{ fontSize: '0.78rem', color: resetDayMsg.type === 'success' ? '#10b981' : '#ef4444' }}>
+                                        {resetDayMsg.text}
+                                    </span>
+                                )}
+                            </form>
                         )}
                     </div>
                     <CreditCard size={32} color="var(--primary)" />

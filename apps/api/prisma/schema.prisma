@@ -21,6 +21,7 @@ model Tenant {
   addonPagesLimit     Int                  @default(0)
   addonRowsLimit      Int                  @default(0)
   lastResetAt         DateTime?
+  billingResetDay     Int                  @default(4)
   pagesLimit          Int                  @default(1000)
   rowsLimit           Int                  @default(1000)
   scenariosPaused     Boolean              @default(false)

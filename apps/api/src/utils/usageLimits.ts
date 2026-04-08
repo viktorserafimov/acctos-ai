@@ -11,28 +11,30 @@ export const TIER_LIMITS: Record<number, { pages: number; rows: number }> = {
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
+/** Default billing reset day of month (1–28). */
+export const DEFAULT_BILLING_RESET_DAY = 4;
+
 /**
- * Returns the start date of the current billing period (5th of current or
+ * Returns the start date of the current billing period (resetDay of current or
  * previous month, whichever has already passed).
  */
-export function getExpectedResetDate(): Date {
+export function getExpectedResetDate(resetDay = DEFAULT_BILLING_RESET_DAY): Date {
     const now = new Date();
-    if (now.getUTCDate() >= 5) {
-        return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 5));
+    if (now.getUTCDate() >= resetDay) {
+        return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), resetDay));
     }
-    // Before the 5th – last period started on the 5th of the previous month
-    return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 5));
+    return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, resetDay));
 }
 
 /**
- * Returns the start date of the NEXT billing period (5th of next month).
+ * Returns the start date of the NEXT billing period.
  */
-export function getNextResetDate(): Date {
+export function getNextResetDate(resetDay = DEFAULT_BILLING_RESET_DAY): Date {
     const now = new Date();
-    if (now.getUTCDate() >= 5) {
-        return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 5));
+    if (now.getUTCDate() >= resetDay) {
+        return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, resetDay));
     }
-    return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 5));
+    return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), resetDay));
 }
 
 /**
@@ -49,11 +51,12 @@ export async function applyMonthlyResetIfNeeded(
     try {
         const tenant = await (prisma.tenant as any).findUnique({
             where: { id: tenantId },
-            select: { lastResetAt: true, scenariosPaused: true },
+            select: { lastResetAt: true, scenariosPaused: true, billingResetDay: true },
         });
         if (!tenant) return false;
 
-        const expectedReset = getExpectedResetDate();
+        const resetDay = tenant.billingResetDay ?? DEFAULT_BILLING_RESET_DAY;
+        const expectedReset = getExpectedResetDate(resetDay);
         const needsReset = !tenant.lastResetAt || new Date(tenant.lastResetAt) < expectedReset;
         if (!needsReset) return false;
 
@@ -71,6 +74,7 @@ export async function applyMonthlyResetIfNeeded(
                 addonPagesLimit: 0,
                 addonRowsLimit: 0,
                 lastResetAt: expectedReset,
+                billingResetDay: resetDay,
             },
         });
         // Clear warning flag if column exists (added in later migration)
