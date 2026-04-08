@@ -439,7 +439,7 @@ export default function Billing() {
                             key={plan.id}
                             className={`plan-card${plan.highlighted ? ' plan-card--highlighted' : ''}${isCurrentPlan ? ' plan-card--current' : ''}`}
                         >
-                            {plan.highlighted && !isCurrentPlan && (
+                            {plan.highlighted && !isSubscribed && (
                                 <div className="plan-badge">{t.mostPopular}</div>
                             )}
                             {isCurrentPlan && (

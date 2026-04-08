@@ -582,57 +582,110 @@ export default function Dashboard() {
                             No reports yet. The first report will appear after midnight EET tonight.
                         </div>
                     ) : (
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.625rem' }}>
-                            {reports.map(report => {
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                            {reports.map((report, idx) => {
                                 const isExpanded = expandedReports.has(report.id);
-                                const dateLabel = new Date(report.date + 'T00:00:00').toLocaleDateString('en-GB', {
-                                    day: 'numeric', month: 'long', year: 'numeric',
+
+                                // Parse structured format: "METRICS:pages=X,rows=Y,docs=Z,credits=W\n---\nNarrative"
+                                const parts = report.content.split('\n---\n');
+                                const hasStructured = parts.length >= 2 && parts[0].startsWith('METRICS:');
+                                let metrics: { pages: number; rows: number; docs: number; credits: number } | null = null;
+                                let narrative = report.content;
+                                if (hasStructured) {
+                                    const raw = parts[0].replace('METRICS:', '');
+                                    const m: Record<string, string> = {};
+                                    raw.split(',').forEach(kv => { const [k, v] = kv.split('='); m[k] = v; });
+                                    metrics = { pages: Number(m.pages ?? 0), rows: Number(m.rows ?? 0), docs: Number(m.docs ?? 0), credits: Number(m.credits ?? 0) };
+                                    narrative = parts.slice(1).join('\n---\n');
+                                }
+
+                                const dateObj = new Date(report.date + 'T00:00:00');
+                                const dayName = dateObj.toLocaleDateString('en-GB', { weekday: 'long' });
+                                const dateFull = dateObj.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
+                                const reportNumber = reports.length - idx;
+
+                                const toggleExpand = () => setExpandedReports(prev => {
+                                    const next = new Set(prev);
+                                    if (next.has(report.id)) next.delete(report.id); else next.add(report.id);
+                                    return next;
                                 });
+
                                 return (
-                                    <div key={report.id} className="card" style={{ padding: 0, overflow: 'hidden' }}>
-                                        {/* Header — always visible, click to expand */}
-                                        <div
-                                            onClick={() => setExpandedReports(prev => {
-                                                const next = new Set(prev);
-                                                if (next.has(report.id)) next.delete(report.id);
-                                                else next.add(report.id);
-                                                return next;
-                                            })}
-                                            style={{
-                                                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                                                padding: '0.875rem 1.25rem', cursor: 'pointer', userSelect: 'none',
-                                            }}
-                                        >
-                                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem' }}>
-                                                <FileText size={15} color="var(--text-muted)" />
-                                                <span style={{ fontWeight: 600, fontSize: '0.95rem' }}>{dateLabel}</span>
+                                    <div key={report.id} className="card" style={{ padding: 0, overflow: 'hidden', border: isExpanded ? '1px solid rgba(99,102,241,0.3)' : undefined }}>
+
+                                        {/* Collapsed header — always visible */}
+                                        <div onClick={toggleExpand} style={{ padding: '1rem 1.25rem', cursor: 'pointer', userSelect: 'none' }}>
+                                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: metrics ? '0.75rem' : 0 }}>
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                                                    <Brain size={16} color="#818cf8" />
+                                                    <div>
+                                                        <div style={{ fontWeight: 700, fontSize: '0.95rem' }}>
+                                                            {dayName} — Daily Usage Report
+                                                        </div>
+                                                        <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: '0.1rem' }}>
+                                                            #{reportNumber} · {dateFull}
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                                <ChevronDown
+                                                    size={16}
+                                                    color="var(--text-muted)"
+                                                    style={{ transform: isExpanded ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.2s ease', flexShrink: 0 }}
+                                                />
                                             </div>
-                                            <ChevronDown
-                                                size={16}
-                                                color="var(--text-muted)"
-                                                style={{ transform: isExpanded ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.2s ease' }}
-                                            />
+
+                                            {/* Metrics chips — only when collapsed and data available */}
+                                            {!isExpanded && metrics && (
+                                                <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                                                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem', fontSize: '0.78rem', padding: '0.2rem 0.6rem', background: 'rgba(99,102,241,0.1)', border: '1px solid rgba(99,102,241,0.2)', borderRadius: '1rem', color: '#818cf8' }}>
+                                                        <FileText size={11} /> {metrics.pages.toLocaleString()} pages
+                                                    </span>
+                                                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem', fontSize: '0.78rem', padding: '0.2rem 0.6rem', background: 'rgba(236,72,153,0.08)', border: '1px solid rgba(236,72,153,0.2)', borderRadius: '1rem', color: '#ec4899' }}>
+                                                        <TrendingUp size={11} /> {metrics.rows.toLocaleString()} rows
+                                                    </span>
+                                                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem', fontSize: '0.78rem', padding: '0.2rem 0.6rem', background: 'rgba(16,185,129,0.08)', border: '1px solid rgba(16,185,129,0.2)', borderRadius: '1rem', color: '#10b981' }}>
+                                                        <CheckCircle size={11} /> {metrics.docs.toLocaleString()} docs
+                                                    </span>
+                                                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem', fontSize: '0.78rem', padding: '0.2rem 0.6rem', background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.2)', borderRadius: '1rem', color: '#f59e0b' }}>
+                                                        <Zap size={11} /> {metrics.credits} credits
+                                                    </span>
+                                                </div>
+                                            )}
                                         </div>
 
-                                        {/* Body — visible when expanded */}
+                                        {/* Expanded body */}
                                         {isExpanded && (
-                                            <div style={{ borderTop: '1px solid var(--glass-border)', padding: '1rem 1.25rem 0.75rem' }}>
-                                                <div style={{ whiteSpace: 'pre-line', fontSize: '0.9rem', lineHeight: 1.75, color: 'var(--text-primary)' }}>
-                                                    {report.content}
+                                            <div style={{ borderTop: '1px solid var(--glass-border)' }}>
+                                                {/* Metrics row inside expanded */}
+                                                {metrics && (
+                                                    <div style={{ display: 'flex', gap: '1rem', padding: '1rem 1.25rem 0', flexWrap: 'wrap' }}>
+                                                        {[
+                                                            { label: 'PDF Pages', value: metrics.pages.toLocaleString(), color: '#818cf8', bg: 'rgba(99,102,241,0.08)', border: 'rgba(99,102,241,0.2)', icon: <FileText size={13} /> },
+                                                            { label: 'Excel Rows', value: metrics.rows.toLocaleString(), color: '#ec4899', bg: 'rgba(236,72,153,0.08)', border: 'rgba(236,72,153,0.2)', icon: <TrendingUp size={13} /> },
+                                                            { label: 'Documents', value: metrics.docs.toLocaleString(), color: '#10b981', bg: 'rgba(16,185,129,0.08)', border: 'rgba(16,185,129,0.2)', icon: <CheckCircle size={13} /> },
+                                                            { label: 'Make.com Credits', value: String(metrics.credits), color: '#f59e0b', bg: 'rgba(245,158,11,0.08)', border: 'rgba(245,158,11,0.2)', icon: <Zap size={13} /> },
+                                                        ].map(m => (
+                                                            <div key={m.label} style={{ flex: '1 1 120px', background: m.bg, border: `1px solid ${m.border}`, borderRadius: '0.75rem', padding: '0.6rem 0.85rem' }}>
+                                                                <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', fontSize: '0.72rem', color: 'var(--text-muted)', marginBottom: '0.25rem' }}>
+                                                                    {m.icon}{m.label}
+                                                                </div>
+                                                                <div style={{ fontSize: '1.2rem', fontWeight: 700, color: m.color }}>{m.value}</div>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                )}
+
+                                                {/* Narrative */}
+                                                <div style={{ padding: '1rem 1.25rem', fontSize: '0.92rem', lineHeight: 1.8, color: 'var(--text-primary)' }}>
+                                                    {narrative.split('\n\n').map((para, i) => (
+                                                        <p key={i} style={{ margin: i > 0 ? '0.85rem 0 0' : 0 }}>{para}</p>
+                                                    ))}
                                                 </div>
-                                                <div style={{ display: 'flex', justifyContent: 'center', marginTop: '1rem', paddingBottom: '0.25rem' }}>
+
+                                                <div style={{ display: 'flex', justifyContent: 'center', padding: '0.5rem 1.25rem 1rem' }}>
                                                     <button
-                                                        onClick={() => setExpandedReports(prev => {
-                                                            const next = new Set(prev);
-                                                            next.delete(report.id);
-                                                            return next;
-                                                        })}
-                                                        style={{
-                                                            display: 'flex', alignItems: 'center', gap: '0.3rem',
-                                                            background: 'none', border: '1px solid var(--glass-border)',
-                                                            borderRadius: '0.5rem', padding: '0.3rem 0.75rem',
-                                                            cursor: 'pointer', color: 'var(--text-muted)', fontSize: '0.8rem',
-                                                        }}
+                                                        onClick={(e) => { e.stopPropagation(); setExpandedReports(prev => { const next = new Set(prev); next.delete(report.id); return next; }); }}
+                                                        style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', background: 'none', border: '1px solid var(--glass-border)', borderRadius: '0.5rem', padding: '0.3rem 0.75rem', cursor: 'pointer', color: 'var(--text-muted)', fontSize: '0.8rem' }}
                                                     >
                                                         <ChevronUp size={13} /> Collapse
                                                     </button>

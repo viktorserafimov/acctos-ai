@@ -54,7 +54,7 @@ export async function generateDailyReportForTenant(
         return;
     }
 
-    const prompt = `You are generating a daily usage report for a document processing automation platform. Based on the following usage data for ${dateStr}, write 3–6 concise bullet point observations about what happened that day. Focus only on facts and patterns. Do not include recommendations or suggestions. Use plain bullet points starting with "•".
+    const prompt = `You are writing a daily usage report for a document processing automation platform. Based on the usage data below for ${dateStr}, write a 2–3 paragraph narrative summary of what happened that day. Write in a clear, professional tone as if briefing a business owner. Focus only on facts and observable patterns — do not include recommendations or suggestions. Do not use bullet points or headers, just flowing prose.
 
 Usage data:
 - PDF pages processed: ${pagesSpent}
@@ -62,7 +62,7 @@ Usage data:
 - Documents handled: ${documentsHandled}
 - Make.com automation credits used: ${makeCredits.toFixed(2)}`;
 
-    let content: string;
+    let narrative: string;
     try {
         const response = await fetch('https://api.openai.com/v1/chat/completions', {
             method: 'POST',
@@ -73,8 +73,8 @@ Usage data:
             body: JSON.stringify({
                 model: REPORT_MODEL,
                 messages: [{ role: 'user', content: prompt }],
-                max_completion_tokens: 500,
-                temperature: 0.3,
+                max_completion_tokens: 600,
+                temperature: 0.4,
             }),
         });
 
@@ -85,8 +85,8 @@ Usage data:
         }
 
         const data = await response.json() as any;
-        content = data.choices?.[0]?.message?.content?.trim();
-        if (!content) {
+        narrative = data.choices?.[0]?.message?.content?.trim();
+        if (!narrative) {
             console.error('[Report] Empty response from OpenAI');
             return;
         }
@@ -94,6 +94,11 @@ Usage data:
         console.error(`[Report] OpenAI call failed: ${e.message}`);
         return;
     }
+
+    // Prepend a structured metrics line so the UI can parse it for the collapsed preview.
+    // Format: METRICS:pages=X,rows=Y,docs=Z,credits=W
+    const metricsLine = `METRICS:pages=${pagesSpent},rows=${rowsUsed},docs=${documentsHandled},credits=${makeCredits.toFixed(2)}`;
+    const content = `${metricsLine}\n---\n${narrative}`;
 
     // 5. Upsert the report
     await (prisma as any).dailyReport.upsert({
