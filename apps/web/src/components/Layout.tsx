@@ -13,6 +13,7 @@ import {
     User as UserIcon,
     Users as UsersIcon,
     AlertTriangle,
+    Upload,
 } from 'lucide-react';
 
 interface LayoutProps {
@@ -158,6 +159,12 @@ export default function Layout({ children }: LayoutProps) {
                         <NavLink to="/users" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
                             <UsersIcon size={20} />
                             <span>{t.navUsers}</span>
+                        </NavLink>
+                    )}
+                    {isAdmin && (
+                        <NavLink to="/import" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
+                            <Upload size={20} />
+                            <span>{t.navImport}</span>
                         </NavLink>
                     )}
                 </nav>

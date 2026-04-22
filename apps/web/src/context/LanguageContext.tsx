@@ -48,6 +48,7 @@ const en = {
     navBilling: 'Billing',
     navSupport: 'Support',
     navUsers: 'Users',
+    navImport: 'Import file',
 
     // Usage limit banner
     bannerTitle: "You've reached your current usage limit, and your agent has been temporarily paused.",
@@ -210,6 +211,16 @@ const en = {
     savingPassword: 'Saving...',
     changePasswordFailed: 'Failed to change password',
     passwordChanged: 'Password changed successfully',
+    tabUsers: 'Users',
+    tabImport: 'Import',
+    uploadFile: 'Upload File',
+    uploading: 'Uploading...',
+    uploadSuccess: 'File uploaded successfully',
+    uploadFailed: 'Failed to upload file',
+    dragDropFile: 'Drag & drop a file here, or click to select',
+    noFileSelected: 'No file selected',
+    selectFile: 'Select File',
+    download: 'Download',
 };
 
 const bg: typeof en = {
@@ -258,6 +269,7 @@ const bg: typeof en = {
     navBilling: 'Фактуриране',
     navSupport: 'Поддръжка',
     navUsers: 'Потребители',
+    navImport: 'Импорт на файл',
 
     // Usage limit banner
     bannerTitle: 'Достигнахте текущия лимит за употреба и вашият агент беше временно спрян.',
@@ -420,6 +432,16 @@ const bg: typeof en = {
     savingPassword: 'Запазване...',
     changePasswordFailed: 'Неуспешна промяна на паролата',
     passwordChanged: 'Паролата е сменена успешно',
+    tabUsers: 'Потребители',
+    tabImport: 'Импорт',
+    uploadFile: 'Качи файл',
+    uploading: 'Качване...',
+    uploadSuccess: 'Файлът е качен успешно',
+    uploadFailed: 'Неуспешно качване на файла',
+    dragDropFile: 'Провлачете файл тук или кликнете за избор',
+    noFileSelected: 'Не е избран файл',
+    selectFile: 'Избери файл',
+    download: 'Изтегли',
 };
 
 type Translations = typeof en;

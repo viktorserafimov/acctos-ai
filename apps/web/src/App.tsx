@@ -6,6 +6,7 @@ import Dashboard from './pages/Dashboard';
 import Billing from './pages/Billing';
 import Tickets from './pages/Tickets';
 import Users from './pages/Users';
+import ImportFile from './pages/ImportFile';
 import Layout from './components/Layout';
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
@@ -110,6 +111,18 @@ function AppRoutes() {
                         <AdminRoute>
                             <Layout>
                                 <Users />
+                            </Layout>
+                        </AdminRoute>
+                    </ProtectedRoute>
+                }
+            />
+            <Route
+                path="/import"
+                element={
+                    <ProtectedRoute>
+                        <AdminRoute>
+                            <Layout>
+                                <ImportFile />
                             </Layout>
                         </AdminRoute>
                     </ProtectedRoute>

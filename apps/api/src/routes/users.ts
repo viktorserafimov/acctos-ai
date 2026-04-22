@@ -1,10 +1,17 @@
 import { Router, Response, NextFunction } from 'express';
 import bcrypt from 'bcryptjs';
 import { z } from 'zod';
+import multer from 'multer';
 import { PrismaClient } from '@prisma/client';
 import { authenticateToken, requireRole, AuthenticatedRequest } from '../middleware/auth.js';
 import { createError } from '../middleware/errorHandler.js';
 import { ADMIN_ROLES } from '../utils/roles.js';
+import { startProcessingJob } from '../services/processing/ProcessingOrchestrator.js';
+
+const upload = multer({
+    storage: multer.memoryStorage(),
+    limits: { fileSize: 50 * 1024 * 1024 }, // 50 MB
+});
 
 const router = Router();
 
@@ -169,6 +176,29 @@ router.delete('/:membershipId', requireRole(...ADMIN_ROLES), async (req: Authent
 
         await prisma.membership.delete({ where: { id: membership.id } });
         res.json({ success: true });
+    } catch (error) {
+        next(error);
+    }
+});
+
+/**
+ * POST /v1/users/import
+ *
+ * Accept a file upload from an admin, start async processing, return jobId.
+ */
+router.post('/import', requireRole(...ADMIN_ROLES), upload.single('file'), async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+    try {
+        if (!req.file) {
+            return next(createError('No file provided', 400, 'NO_FILE'));
+        }
+
+        const jobId = startProcessingJob(
+            req.file.originalname,
+            req.file.mimetype,
+            req.file.buffer,
+        );
+
+        res.json({ success: true, jobId });
     } catch (error) {
         next(error);
     }
