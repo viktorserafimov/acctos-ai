@@ -49,6 +49,9 @@ export async function analyzePage(pageBuffer: Buffer): Promise<Cell[]> {
 
 /** Analyze multiple pages with a concurrency limit of 3 (matching Make's rate limit). */
 export async function analyzePages(pageBuffers: Buffer[]): Promise<Array<Cell[] | null>> {
+    // Validate credentials up-front so a missing env var fails at Extract, not Parse.
+    getClient();
+
     const CONCURRENCY = 3;
     const results: Array<Cell[] | null> = new Array(pageBuffers.length).fill(null);
 
