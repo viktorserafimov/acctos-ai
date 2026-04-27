@@ -12,31 +12,33 @@ router.use(requireSuperAdmin);
 const createTenantSchema = z.object({
     tenantName: z.string().min(2),
     ownerEmail: z.string().email(),
-    ownerPassword: z.string().min(8),
+    ownerPassword: z.string().min(8).optional(),
     ownerName: z.string().optional(),
     pagesLimit: z.number().int().positive().optional(),
     rowsLimit: z.number().int().positive().optional(),
 });
 
-// POST /v1/superadmin/tenants — create a new tenant + owner user
+// POST /v1/superadmin/tenants — create a new tenant and assign an owner.
+// If ownerEmail already exists the existing user is linked (no password needed).
+// If ownerEmail is new, ownerPassword is required to create the account.
 router.post('/tenants', async (req: Request, res: Response, next: NextFunction) => {
     try {
         const prisma: PrismaClient = req.app.locals.prisma;
         const data = createTenantSchema.parse(req.body);
 
         const existingUser = await prisma.user.findUnique({ where: { email: data.ownerEmail } });
-        if (existingUser) {
-            return next(createError('A user with that email already exists', 400, 'EMAIL_EXISTS'));
+
+        if (!existingUser && !data.ownerPassword) {
+            return next(createError('ownerPassword is required when the user does not already exist', 400, 'VALIDATION_ERROR'));
         }
 
         const slug = data.tenantName.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
-        const hashedPassword = await bcrypt.hash(data.ownerPassword, 10);
 
         const result = await (prisma as any).$transaction(async (tx: any) => {
-            const user = await tx.user.create({
+            const user = existingUser ?? await tx.user.create({
                 data: {
                     email: data.ownerEmail,
-                    password: hashedPassword,
+                    password: await bcrypt.hash(data.ownerPassword!, 10),
                     name: data.ownerName,
                 },
             });

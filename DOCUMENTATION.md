@@ -22,7 +22,7 @@ Acctos AI is a secure, multi-tenant web dashboard designed for customers to mana
 *   **Authentication**: JSON Web Tokens (JWT)
 *   **Validation**: Zod
 
-### Database & Infrastructure
+### Database & Infrastructure   
 *   **Database**: PostgreSQL
 *   **Containerization**: Docker (for local database)
 *   **Package Management**: npm (Workspaces)

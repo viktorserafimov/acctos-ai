@@ -128,7 +128,7 @@ export default function SuperAdmin() {
                 tenantName,
                 ownerEmail,
                 ownerName: ownerName || undefined,
-                ownerPassword,
+                ownerPassword: ownerPassword || undefined,
                 pagesLimit: parseInt(pagesLimit),
                 rowsLimit: parseInt(rowsLimit),
             });
@@ -276,8 +276,8 @@ export default function SuperAdmin() {
                                     <input style={styles.input} value={ownerName} onChange={e => setOwnerName(e.target.value)} placeholder="Jane Smith" />
                                 </div>
                                 <div style={styles.formGroup}>
-                                    <label style={styles.label}>Password *</label>
-                                    <input style={styles.input} type="password" value={ownerPassword} onChange={e => setOwnerPassword(e.target.value)} required minLength={8} placeholder="Min. 8 characters" />
+                                    <label style={styles.label}>Password <span style={{ fontWeight: 400, textTransform: 'none', letterSpacing: 0 }}>(leave blank if user already exists)</span></label>
+                                    <input style={styles.input} type="password" value={ownerPassword} onChange={e => setOwnerPassword(e.target.value)} minLength={8} placeholder="Min. 8 characters — skip if user exists" />
                                 </div>
 
                                 {createError && (
