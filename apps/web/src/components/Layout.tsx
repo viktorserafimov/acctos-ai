@@ -14,6 +14,7 @@ import {
     Users as UsersIcon,
     AlertTriangle,
     Upload,
+    ShieldCheck,
 } from 'lucide-react';
 
 interface LayoutProps {
@@ -21,7 +22,7 @@ interface LayoutProps {
 }
 
 export default function Layout({ children }: LayoutProps) {
-    const { user, tenants, activeTenant, logout, switchTenant, isAdmin } = useAuth();
+    const { user, tenants, activeTenant, logout, switchTenant, isAdmin, isSuperAdmin } = useAuth();
     const { t, language, setLanguage } = useLanguage();
     const [showTenantMenu, setShowTenantMenu] = useState(false);
     const [scenariosPaused, setScenariosPaused] = useState(false);
@@ -165,6 +166,12 @@ export default function Layout({ children }: LayoutProps) {
                         <NavLink to="/import" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
                             <Upload size={20} />
                             <span>{t.navImport}</span>
+                        </NavLink>
+                    )}
+                    {isSuperAdmin && (
+                        <NavLink to="/superadmin" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`} style={{ marginTop: 'auto' }}>
+                            <ShieldCheck size={20} />
+                            <span>Super Admin</span>
                         </NavLink>
                     )}
                 </nav>

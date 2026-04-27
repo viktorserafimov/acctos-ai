@@ -24,6 +24,7 @@ interface AuthContextType {
     currentRole: string | null;
     isAdmin: boolean;
     isUser: boolean;
+    isSuperAdmin: boolean;
     login: (email: string, password: string) => Promise<void>;
     register: (email: string, password: string, name: string, tenantName: string) => Promise<void>;
     logout: () => void;
@@ -52,6 +53,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     const isAdmin = currentRole !== null && ADMIN_ROLES.includes(currentRole);
     const isUser = currentRole === 'MEMBER';
+    const isSuperAdmin = user?.email === (import.meta.env.VITE_SUPERADMIN_EMAIL ?? '');
 
     // Configure axios defaults
     useEffect(() => {
@@ -147,6 +149,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 currentRole,
                 isAdmin,
                 isUser,
+                isSuperAdmin,
                 login,
                 register,
                 logout,

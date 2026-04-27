@@ -48,6 +48,24 @@ function AdminRoute({ children }: { children: React.ReactNode }) {
     return <>{children}</>;
 }
 
+function SuperAdminRoute({ children }: { children: React.ReactNode }) {
+    const { isSuperAdmin, isLoading } = useAuth();
+
+    if (isLoading) {
+        return (
+            <div className="loading-container">
+                <div className="spinner"></div>
+            </div>
+        );
+    }
+
+    if (!isSuperAdmin) {
+        return <Navigate to="/home" replace />;
+    }
+
+    return <>{children}</>;
+}
+
 function AppRoutes() {
     const { token, isLoading } = useAuth();
 
@@ -129,7 +147,18 @@ function AppRoutes() {
                     </ProtectedRoute>
                 }
             />
-            <Route path="/superadmin" element={<SuperAdmin />} />
+            <Route
+                path="/superadmin"
+                element={
+                    <ProtectedRoute>
+                        <SuperAdminRoute>
+                            <Layout>
+                                <SuperAdmin />
+                            </Layout>
+                        </SuperAdminRoute>
+                    </ProtectedRoute>
+                }
+            />
             <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
     );
