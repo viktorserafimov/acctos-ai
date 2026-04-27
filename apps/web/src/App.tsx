@@ -7,6 +7,7 @@ import Billing from './pages/Billing';
 import Tickets from './pages/Tickets';
 import Users from './pages/Users';
 import ImportFile from './pages/ImportFile';
+import SuperAdmin from './pages/SuperAdmin';
 import Layout from './components/Layout';
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
@@ -128,6 +129,7 @@ function AppRoutes() {
                     </ProtectedRoute>
                 }
             />
+            <Route path="/superadmin" element={<SuperAdmin />} />
             <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
     );
