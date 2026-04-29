@@ -52,6 +52,23 @@ function detectBank(lower: string): BankType {
     return 'generic';
 }
 
+/** Scan extracted document text for bank name mentions when filename gave no result. */
+export function detectBankFromContent(text: string): BankType {
+    const t = text.toLowerCase();
+    // Use word-boundary-style checks to reduce false positives
+    if (/\bhsbc\b/.test(t))                                          return 'hsbc';
+    if (/\brevolut\b/.test(t))                                       return 'revolut';
+    if (/\bmonzo\b/.test(t))                                         return 'monzo';
+    if (/\b(wise|transferwise)\b/.test(t))                           return 'wise';
+    if (/\bstarling\b/.test(t))                                      return 'starling';
+    if (/\b(natwest|nat west|national westminster)\b/.test(t))       return 'natwest';
+    if (/\bnationwide\b/.test(t))                                    return 'nationwide';
+    if (/\bsantander\b/.test(t))                                     return 'santander';
+    if (/\bbarclays\b/.test(t))                                      return 'barclays';
+    if (/\bmetro bank\b/.test(t))                                    return 'metro';
+    return 'generic';
+}
+
 function detectDocType(lower: string): DocType {
     if (lower.includes('vat') || lower.includes('invoice') || lower.includes('purchase')) return 'vat';
     return 'bank_statement';

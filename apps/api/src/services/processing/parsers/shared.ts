@@ -125,6 +125,17 @@ export function excelSerialToDate(serial: number): string {
     return `${d}/${mo}/${date.getFullYear()}`;
 }
 
+/** Scan all cell text for 4-digit years (2020-2099), return sorted unique list. */
+export function extractYearsFromCells(cells: Cell[]): number[] {
+    const found = new Set<number>();
+    for (const c of cells) {
+        for (const m of c.content.matchAll(/\b(20[2-9]\d)\b/g)) {
+            found.add(Number(m[1]));
+        }
+    }
+    return [...found].sort();
+}
+
 /** Build a row→col→content grid from cell array */
 export function buildGrid(cells: Cell[]): Map<number, Map<number, string>> {
     const grid = new Map<number, Map<number, string>>();

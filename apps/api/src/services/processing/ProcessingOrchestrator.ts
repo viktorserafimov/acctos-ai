@@ -1,6 +1,6 @@
 import { randomUUID } from 'crypto';
 import { jobStore } from './JobStore.js';
-import { classify, BankType } from './DocumentClassifier.js';
+import { classify, detectBankFromContent, BankType } from './DocumentClassifier.js';
 import { splitPdf } from './PdfSplitter.js';
 import { analyzePages } from './AzureExtractor.js';
 import { categorize } from './AssistantCategorizer.js';
@@ -104,7 +104,19 @@ async function runJob(jobId: string, filename: string, mimeType: string, fileBuf
 
             // ── Stage: parse (bank-specific parser) ──────────────────────────────
             jobStore.update(jobId, { currentStage: 'parse' });
-            const transactions = parseAllCells(pageCells, classification.bankType);
+
+            let bankType = classification.bankType;
+            if (bankType === 'generic') {
+                const allText = pageCells.flatMap(c => c ?? []).map(c => c.content).join(' ');
+                const detected = detectBankFromContent(allText);
+                if (detected !== 'generic') {
+                    console.log(`[Orchestrator] Bank detected from content: ${detected} (filename gave generic)`);
+                    bankType = detected;
+                    jobStore.update(jobId, { bankType: detected });
+                }
+            }
+
+            const transactions = parseAllCells(pageCells, bankType);
             if (transactions.length === 0) throw new Error('No transactions could be extracted from the document');
 
             // ── Stage: categorize (OpenAI Assistant) ─────────────────────────────

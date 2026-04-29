@@ -1,10 +1,20 @@
 // Barclays parser - auto-detects money in/out from header, handles signed values
 // Adapted from Make scenarios, modules 1341 + 1376
-import { Cell, ParsedTransaction, ParseResult, parseDateToDDMMYYYY, buildGrid, getCell, maxRow } from './shared.js';
+import { Cell, ParsedTransaction, ParseResult, parseDateToDDMMYYYY, buildGrid, getCell, maxRow, extractYearsFromCells } from './shared.js';
+
+const MONTH_ABBR: Record<string, number> = {
+    jan:1,feb:2,mar:3,apr:4,may:5,jun:6,jul:7,aug:8,sep:9,oct:10,nov:11,dec:12
+};
 
 function fixOCRDate(s: string): string {
-    // Fix "14/11 /2025" (space before slash)
     return s.replace(/(\d{2}\/\d{2})\s+(\/\d{4})/, '$1$2').replace(/\s*\/\s*/g, '/');
+}
+
+/** Extract 3-letter month number from a raw date string like "6 Dec" or "6 Dec 2025". */
+function monthFromRaw(raw: string): number | null {
+    const m = raw.match(/\b([A-Za-z]{3,})\b/);
+    if (!m) return null;
+    return MONTH_ABBR[m[1].slice(0, 3).toLowerCase()] ?? null;
 }
 
 export function parse(cells: Cell[]): ParseResult {
@@ -26,19 +36,34 @@ export function parse(cells: Cell[]): ParseResult {
         }
     }
 
+    // Determine base year from cell text (e.g. "Issued on 06 January 2026", period header)
+    // Falls back to current year if nothing found.
+    const availableYears = extractYearsFromCells(cells);
+    let fallbackYear = availableYears[0] ?? new Date().getFullYear();
+    let prevMonth = -1;
+
     const startRow = header ? 1 : 0;
 
     for (let r = startRow; r <= rows; r++) {
         let rawDate = getCell(grid, r, dateCol);
         rawDate = fixOCRDate(rawDate);
-        const date = parseDateToDDMMYYYY(rawDate);
+        if (!rawDate) continue;
+
+        // Detect year rollover: when month drops (e.g. Dec → Jan) advance to the next
+        // known year. This handles statements that span a year boundary.
+        const currMonth = monthFromRaw(rawDate);
+        if (currMonth !== null && prevMonth > 0 && currMonth < prevMonth && prevMonth >= 11) {
+            const nextYear = availableYears.find(y => y > fallbackYear);
+            if (nextYear) fallbackYear = nextYear;
+        }
+        if (currMonth !== null) prevMonth = currMonth;
+
+        const date = parseDateToDDMMYYYY(rawDate, fallbackYear);
         if (!date) continue;
 
-        // Skip "Start balance" row
+        // Skip summary rows
         const rawDesc = getCell(grid, r, descCol);
-        if (/start\s+balance/i.test(rawDesc)) continue;
-
-        const description = rawDesc;
+        if (/start\s+balance|balance\s+(brought|carried)/i.test(rawDesc)) continue;
 
         // Handle signed values like "-£35.56"
         let rawOut = getCell(grid, r, outCol).replace(/[£$€,\s]/g, '');
@@ -56,7 +81,7 @@ export function parse(cells: Cell[]): ParseResult {
         transactions.push({
             date,
             type: '',
-            description,
+            description: rawDesc,
             moneyIn:  rawIn,
             moneyOut: rawOut,
             balance:  rawBal,
