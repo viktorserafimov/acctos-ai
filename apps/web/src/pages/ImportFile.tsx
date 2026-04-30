@@ -1,8 +1,8 @@
-import React, { useState, useRef, useEffect, Fragment } from 'react';
+import React, { useState, useRef, useEffect, useCallback, Fragment } from 'react';
 import axios from 'axios';
 import {
     Upload, FileSearch, Layers, AlignLeft, Sparkles, FileSpreadsheet,
-    Loader2, CheckCircle2, XCircle, Download, FileUp,
+    Loader2, CheckCircle2, XCircle, Download, FileUp, Eye, X, Clock,
 } from 'lucide-react';
 import { useLanguage } from '../context/LanguageContext';
 
@@ -22,6 +22,17 @@ interface Job {
     pageCount?: number;
     error?: string;
 }
+
+interface RecentJob {
+    id: string;
+    filename: string;
+    completedAt: string;
+    transactionCount?: number;
+    expired?: boolean;
+}
+
+const LS_KEY = 'acctos_recent_jobs';
+const MAX_RECENT = 10;
 
 // ── Pipeline stage definitions ───────────────────────────────────────────────
 
@@ -92,34 +103,21 @@ function StageNode({ stage, state, error, isLast, lineCompleted }: StageNodeProp
 
     return (
         <Fragment>
-            {/* Stage column */}
             <div
                 style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', minWidth: 68, position: 'relative' }}
                 onMouseEnter={() => setHovered(true)}
                 onMouseLeave={() => setHovered(false)}
             >
-                {/* Error tooltip */}
                 {showTooltip && (
                     <div style={{
-                        position: 'fixed',
-                        bottom: 'auto',
-                        top: 'auto',
-                        left: '50%',
-                        transform: 'translate(-50%, -8px)',
+                        position: 'fixed', bottom: 'auto', top: 'auto',
+                        left: '50%', transform: 'translate(-50%, -8px)',
                         background: 'rgba(10,10,16,0.97)',
                         border: '1px solid rgba(239,68,68,0.4)',
-                        color: '#fca5a5',
-                        padding: '0.75rem 1rem',
-                        borderRadius: '0.6rem',
-                        fontSize: '0.82rem',
-                        lineHeight: 1.55,
-                        whiteSpace: 'pre-wrap',
-                        width: 'max-content',
-                        maxWidth: '480px',
-                        wordBreak: 'break-word',
-                        zIndex: 9999,
-                        pointerEvents: 'none',
-                        textAlign: 'left',
+                        color: '#fca5a5', padding: '0.75rem 1rem', borderRadius: '0.6rem',
+                        fontSize: '0.82rem', lineHeight: 1.55, whiteSpace: 'pre-wrap',
+                        width: 'max-content', maxWidth: '480px', wordBreak: 'break-word',
+                        zIndex: 9999, pointerEvents: 'none', textAlign: 'left',
                         boxShadow: '0 8px 32px rgba(0,0,0,0.7), 0 0 0 1px rgba(239,68,68,0.15)',
                     }}>
                         <div style={{ fontWeight: 700, marginBottom: '0.3rem', color: '#ef4444', fontSize: '0.78rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
@@ -129,61 +127,201 @@ function StageNode({ stage, state, error, isLast, lineCompleted }: StageNodeProp
                     </div>
                 )}
 
-                {/* Indicator row (28px tall) */}
                 <div style={{ height: 28, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                    {state === 'active' && (
-                        <Loader2 size={16} color="#6366f1" style={{ animation: 'spin 1s linear infinite' }} />
-                    )}
+                    {state === 'active'    && <Loader2 size={16} color="#6366f1" style={{ animation: 'spin 1s linear infinite' }} />}
                     {state === 'completed' && <CheckCircle2 size={16} color="#22c55e" />}
                     {state === 'failed'    && <XCircle size={16} color="#ef4444" />}
                 </div>
 
-                {/* Circle */}
                 <div style={{
                     width: 52, height: 52, borderRadius: '50%',
-                    background: palette.bg,
-                    border: `2px solid ${palette.border}`,
+                    background: palette.bg, border: `2px solid ${palette.border}`,
                     display: 'flex', alignItems: 'center', justifyContent: 'center',
                     transition: 'all 0.4s ease',
-                    boxShadow: state === 'active'
-                        ? `0 0 0 4px ${palette.border}20, 0 0 16px ${palette.border}40`
-                        : 'none',
+                    boxShadow: state === 'active' ? `0 0 0 4px ${palette.border}20, 0 0 16px ${palette.border}40` : 'none',
                     cursor: state === 'failed' ? 'help' : 'default',
                 }}>
                     <Icon size={20} color={palette.icon} />
                 </div>
 
-                {/* Label */}
                 <span style={{
-                    marginTop: '0.45rem',
-                    fontSize: '0.68rem',
-                    fontWeight: 600,
-                    letterSpacing: '0.02em',
-                    color: palette.label,
-                    textAlign: 'center',
-                    transition: 'color 0.4s',
-                    textTransform: 'uppercase',
+                    marginTop: '0.45rem', fontSize: '0.68rem', fontWeight: 600,
+                    letterSpacing: '0.02em', color: palette.label,
+                    textAlign: 'center', transition: 'color 0.4s', textTransform: 'uppercase',
                 }}>
                     {stage.label}
                 </span>
             </div>
 
-            {/* Connector line (shown between nodes, not after the last) */}
             {!isLast && (
                 <div style={{
-                    flex: 1,
-                    height: 2,
-                    minWidth: 12,
-                    marginTop: 52,   // 28px indicator + 26px (half of 52px circle) - 1px (half line) = 53, minus 1 for visual tweak
-                    background: lineCompleted
-                        ? 'linear-gradient(90deg, #22c55e, #22c55e)'
-                        : 'rgba(255,255,255,0.08)',
-                    transition: 'background 0.5s ease',
-                    borderRadius: 1,
+                    flex: 1, height: 2, minWidth: 12, marginTop: 52,
+                    background: lineCompleted ? 'linear-gradient(90deg, #22c55e, #22c55e)' : 'rgba(255,255,255,0.08)',
+                    transition: 'background 0.5s ease', borderRadius: 1,
                 }} />
             )}
         </Fragment>
     );
+}
+
+// ── Preview Modal ────────────────────────────────────────────────────────────
+
+interface PreviewModalProps {
+    jobId: string;
+    filename: string;
+    onClose: () => void;
+    onDownload: () => void;
+}
+
+function PreviewModal({ jobId, filename, onClose, onDownload }: PreviewModalProps) {
+    const [rows, setRows] = useState<unknown[][]>([]);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState<string | null>(null);
+
+    useEffect(() => {
+        axios.get(`/v1/processing/${jobId}/preview`)
+            .then(res => setRows(res.data.rows as unknown[][]))
+            .catch(() => setError('Could not load preview.'))
+            .finally(() => setLoading(false));
+    }, [jobId]);
+
+    const headers = rows[0] as string[] | undefined;
+    const dataRows = rows.slice(1);
+
+    return (
+        <div style={{
+            position: 'fixed', inset: 0, zIndex: 1000,
+            background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(4px)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            padding: '1.5rem',
+        }} onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
+            <div style={{
+                background: 'var(--surface, #1a1a2e)',
+                border: '1px solid rgba(255,255,255,0.1)',
+                borderRadius: '1.25rem',
+                width: '100%', maxWidth: 900,
+                maxHeight: '85vh',
+                display: 'flex', flexDirection: 'column',
+                boxShadow: '0 24px 80px rgba(0,0,0,0.6)',
+            }}>
+                {/* Modal header */}
+                <div style={{
+                    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                    padding: '1.1rem 1.4rem',
+                    borderBottom: '1px solid rgba(255,255,255,0.07)',
+                    flexShrink: 0,
+                }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
+                        <FileSpreadsheet size={18} color="#22c55e" />
+                        <span style={{ fontWeight: 600, fontSize: '0.92rem' }}>
+                            {filename.replace(/\.[^.]+$/, '')}_processed.xlsx
+                        </span>
+                        {rows.length > 1 && (
+                            <span style={{
+                                fontSize: '0.72rem', color: 'var(--text-muted)',
+                                background: 'rgba(255,255,255,0.06)',
+                                padding: '0.2rem 0.55rem', borderRadius: '99px',
+                            }}>
+                                {dataRows.length} rows
+                            </span>
+                        )}
+                    </div>
+                    <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                        <button className="btn-success" onClick={onDownload} style={{ padding: '0.45rem 0.9rem', fontSize: '0.8rem' }}>
+                            <Download size={14} /> Download
+                        </button>
+                        <button onClick={onClose} style={{
+                            background: 'none', border: 'none', cursor: 'pointer',
+                            color: 'var(--text-muted)', padding: '0.3rem', borderRadius: '0.4rem',
+                            display: 'flex', alignItems: 'center',
+                        }}>
+                            <X size={18} />
+                        </button>
+                    </div>
+                </div>
+
+                {/* Modal body */}
+                <div style={{ overflowY: 'auto', flex: 1, padding: '0' }}>
+                    {loading && (
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '3rem', gap: '0.6rem', color: 'var(--text-muted)' }}>
+                            <Loader2 size={18} style={{ animation: 'spin 1s linear infinite' }} />
+                            Loading preview…
+                        </div>
+                    )}
+                    {error && (
+                        <div style={{ padding: '2rem', textAlign: 'center', color: '#ef4444', fontSize: '0.88rem' }}>{error}</div>
+                    )}
+                    {!loading && !error && headers && (
+                        <div style={{ overflowX: 'auto' }}>
+                            <table style={{
+                                width: '100%', borderCollapse: 'collapse',
+                                fontSize: '0.78rem', tableLayout: 'auto',
+                            }}>
+                                <thead>
+                                    <tr>
+                                        {headers.map((h, i) => (
+                                            <th key={i} style={{
+                                                padding: '0.6rem 0.9rem',
+                                                textAlign: 'left', fontWeight: 700,
+                                                fontSize: '0.7rem', letterSpacing: '0.04em',
+                                                textTransform: 'uppercase',
+                                                color: 'var(--text-muted)',
+                                                background: 'rgba(255,255,255,0.04)',
+                                                borderBottom: '1px solid rgba(255,255,255,0.08)',
+                                                whiteSpace: 'nowrap',
+                                                position: 'sticky', top: 0, zIndex: 1,
+                                            }}>
+                                                {h as string}
+                                            </th>
+                                        ))}
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {dataRows.map((row, ri) => (
+                                        <tr key={ri} style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
+                                            {(row as unknown[]).map((cell, ci) => (
+                                                <td key={ci} style={{
+                                                    padding: '0.5rem 0.9rem',
+                                                    color: String(cell) ? 'var(--text)' : 'var(--text-muted)',
+                                                    whiteSpace: 'nowrap',
+                                                    maxWidth: 260,
+                                                    overflow: 'hidden',
+                                                    textOverflow: 'ellipsis',
+                                                }}>
+                                                    {String(cell ?? '')}
+                                                </td>
+                                            ))}
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    )}
+                </div>
+            </div>
+        </div>
+    );
+}
+
+// ── Helpers ──────────────────────────────────────────────────────────────────
+
+function loadRecentJobs(): RecentJob[] {
+    try {
+        return JSON.parse(localStorage.getItem(LS_KEY) || '[]');
+    } catch {
+        return [];
+    }
+}
+
+function saveRecentJobs(jobs: RecentJob[]) {
+    localStorage.setItem(LS_KEY, JSON.stringify(jobs.slice(0, MAX_RECENT)));
+}
+
+function formatDate(iso: string) {
+    return new Date(iso).toLocaleString(undefined, {
+        day: '2-digit', month: 'short', year: 'numeric',
+        hour: '2-digit', minute: '2-digit',
+    });
 }
 
 // ── Main component ───────────────────────────────────────────────────────────
@@ -196,10 +334,47 @@ export default function ImportFile() {
     const [uploadError, setUploadError] = useState<string | null>(null);
     const [isDragging, setIsDragging] = useState(false);
     const [job, setJob] = useState<Job | null>(null);
+    const [recentJobs, setRecentJobs] = useState<RecentJob[]>([]);
+    const [previewJobId, setPreviewJobId] = useState<string | null>(null);
+    const [previewFilename, setPreviewFilename] = useState('');
     const fileInputRef = useRef<HTMLInputElement>(null);
     const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
+    // Load and verify recent jobs on mount
+    useEffect(() => {
+        const saved = loadRecentJobs();
+        if (saved.length === 0) return;
+
+        Promise.all(saved.map(async (rj) => {
+            try {
+                await axios.get(`/v1/processing/${rj.id}`);
+                return rj;
+            } catch {
+                return { ...rj, expired: true };
+            }
+        })).then(verified => {
+            const alive = verified.filter(j => !j.expired);
+            setRecentJobs(alive);
+            saveRecentJobs(alive);
+        });
+    }, []);
+
     useEffect(() => () => { if (pollRef.current) clearInterval(pollRef.current); }, []);
+
+    const addToRecent = useCallback((j: Job) => {
+        setRecentJobs(prev => {
+            const entry: RecentJob = {
+                id: j.id,
+                filename: j.filename,
+                completedAt: new Date().toISOString(),
+                transactionCount: j.transactionCount,
+            };
+            const filtered = prev.filter(r => r.id !== j.id);
+            const updated = [entry, ...filtered];
+            saveRecentJobs(updated);
+            return updated;
+        });
+    }, []);
 
     const reset = () => {
         if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
@@ -208,16 +383,27 @@ export default function ImportFile() {
         setUploadError(null);
     };
 
-    const handleFileSelect = (file: File) => {
-        reset();
-        setSelectedFile(file);
-    };
+    const handleFileSelect = (file: File) => { reset(); setSelectedFile(file); };
 
     const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
         e.preventDefault();
         setIsDragging(false);
         const file = e.dataTransfer.files[0];
         if (file) handleFileSelect(file);
+    };
+
+    const handleDownload = async (jobId: string, filename: string) => {
+        try {
+            const res = await axios.get(`/v1/processing/${jobId}/download`, { responseType: 'blob' });
+            const url = URL.createObjectURL(res.data);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = filename.replace(/\.[^.]+$/, '') + '_processed.xlsx';
+            a.click();
+            URL.revokeObjectURL(url);
+        } catch {
+            alert('Download failed. The file may have expired (files are kept for 2 hours).');
+        }
     };
 
     const startPolling = (jobId: string) => {
@@ -228,6 +414,7 @@ export default function ImportFile() {
                 setJob(j);
                 if (j.status === 'completed' || j.status === 'failed') {
                     if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
+                    if (j.status === 'completed') addToRecent(j);
                 }
             } catch { /* ignore transient errors */ }
         }, 2000);
@@ -296,9 +483,7 @@ export default function ImportFile() {
                 <div style={{
                     background: 'rgba(255,255,255,0.025)',
                     border: '1px solid rgba(255,255,255,0.07)',
-                    borderRadius: '1rem',
-                    padding: '1.25rem 1rem 1rem',
-                    marginBottom: '1.5rem',
+                    borderRadius: '1rem', padding: '1.25rem 1rem 1rem', marginBottom: '1.5rem',
                 }}>
                     <div style={{ display: 'flex', alignItems: 'flex-start', width: '100%' }}>
                         {STAGES.map((stage, i) => (
@@ -313,7 +498,6 @@ export default function ImportFile() {
                         ))}
                     </div>
 
-                    {/* Status label */}
                     <div style={{ marginTop: '1rem', textAlign: 'center', minHeight: 20 }}>
                         {!job && !isUploading && (
                             <span style={{ fontSize: '0.75rem', color: 'rgba(255,255,255,0.2)' }}>
@@ -381,7 +565,7 @@ export default function ImportFile() {
                     </div>
                 )}
 
-                {/* ── Upload error (network/auth failures before job creation) ── */}
+                {/* ── Upload error ── */}
                 {uploadError && (
                     <div style={{
                         marginTop: '1rem', padding: '0.75rem 1rem',
@@ -395,36 +579,28 @@ export default function ImportFile() {
                 {/* ── Action buttons ── */}
                 <div style={{ marginTop: '1.25rem', display: 'flex', gap: '0.75rem' }}>
                     {(isCompleted || isFailed) && (
-                        <button
-                            className="btn-secondary"
-                            onClick={() => { reset(); }}
-                            style={{ flex: 1, justifyContent: 'center' }}
-                        >
+                        <button className="btn-secondary" onClick={() => { reset(); }} style={{ flex: 1, justifyContent: 'center' }}>
                             Upload another file
                         </button>
                     )}
 
                     {isCompleted && (
-                        <button
-                            className="btn-success"
-                            onClick={async () => {
-                                try {
-                                    const res = await axios.get(`/v1/processing/${job!.id}/download`, { responseType: 'blob' });
-                                    const url = URL.createObjectURL(res.data);
-                                    const a = document.createElement('a');
-                                    a.href = url;
-                                    a.download = job!.filename.replace(/\.[^.]+$/, '') + '_processed.xlsx';
-                                    a.click();
-                                    URL.revokeObjectURL(url);
-                                } catch {
-                                    alert('Download failed. Please try again.');
-                                }
-                            }}
-                            style={{ flex: 1, justifyContent: 'center' }}
-                        >
-                            <Download size={16} />
-                            {t.download}
-                        </button>
+                        <>
+                            <button
+                                className="btn-secondary"
+                                onClick={() => { setPreviewFilename(job!.filename); setPreviewJobId(job!.id); }}
+                                style={{ flex: 1, justifyContent: 'center' }}
+                            >
+                                <Eye size={16} /> Preview
+                            </button>
+                            <button
+                                className="btn-success"
+                                onClick={() => handleDownload(job!.id, job!.filename)}
+                                style={{ flex: 1, justifyContent: 'center' }}
+                            >
+                                <Download size={16} /> {t.download}
+                            </button>
+                        </>
                     )}
 
                     {!isCompleted && !isFailed && (
@@ -442,6 +618,71 @@ export default function ImportFile() {
                     )}
                 </div>
             </div>
+
+            {/* ── Recent jobs list ── */}
+            {recentJobs.length > 0 && (
+                <div className="card" style={{ maxWidth: 620, marginTop: '1.25rem' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', marginBottom: '1rem' }}>
+                        <Clock size={16} color="var(--text-muted)" />
+                        <span style={{ fontWeight: 600, fontSize: '0.88rem' }}>Recent files</span>
+                        <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
+                            — available for 2 hours after processing
+                        </span>
+                    </div>
+
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                        {recentJobs.map(rj => (
+                            <div key={rj.id} style={{
+                                display: 'flex', alignItems: 'center', gap: '0.75rem',
+                                padding: '0.65rem 0.9rem',
+                                background: 'rgba(255,255,255,0.03)',
+                                border: '1px solid rgba(255,255,255,0.06)',
+                                borderRadius: '0.75rem',
+                            }}>
+                                <FileSpreadsheet size={16} color="#22c55e" style={{ flexShrink: 0 }} />
+                                <div style={{ flex: 1, minWidth: 0 }}>
+                                    <div style={{
+                                        fontWeight: 500, fontSize: '0.83rem',
+                                        overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                                    }}>
+                                        {rj.filename}
+                                    </div>
+                                    <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '0.1rem' }}>
+                                        {formatDate(rj.completedAt)}
+                                        {rj.transactionCount != null && ` · ${rj.transactionCount} transactions`}
+                                    </div>
+                                </div>
+                                <div style={{ display: 'flex', gap: '0.4rem', flexShrink: 0 }}>
+                                    <button
+                                        className="btn-secondary"
+                                        style={{ padding: '0.35rem 0.75rem', fontSize: '0.76rem' }}
+                                        onClick={() => { setPreviewFilename(rj.filename); setPreviewJobId(rj.id); }}
+                                    >
+                                        <Eye size={13} /> Preview
+                                    </button>
+                                    <button
+                                        className="btn-success"
+                                        style={{ padding: '0.35rem 0.75rem', fontSize: '0.76rem' }}
+                                        onClick={() => handleDownload(rj.id, rj.filename)}
+                                    >
+                                        <Download size={13} /> Download
+                                    </button>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            )}
+
+            {/* ── Preview modal ── */}
+            {previewJobId && (
+                <PreviewModal
+                    jobId={previewJobId}
+                    filename={previewFilename}
+                    onClose={() => setPreviewJobId(null)}
+                    onDownload={() => handleDownload(previewJobId, previewFilename)}
+                />
+            )}
 
             <style>{`
         @keyframes spin { to { transform: rotate(360deg); } }

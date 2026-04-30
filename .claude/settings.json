@@ -2,7 +2,8 @@
   "permissions": {
     "allow": [
       "Bash(npx vite:*)",
-      "Bash(grep -E \"\\\\.\\(tsx?|jsx?\\)$\")"
+      "Bash(grep -E \"\\\\.\\(tsx?|jsx?\\)$\")",
+      "Bash(xargs grep *)"
     ]
   }
 }
