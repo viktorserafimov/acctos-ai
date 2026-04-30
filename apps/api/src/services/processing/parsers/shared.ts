@@ -136,6 +136,50 @@ export function extractYearsFromCells(cells: Cell[]): number[] {
     return [...found].sort();
 }
 
+export interface StatementPeriod {
+    start: Date;
+    end: Date;
+}
+
+function parsePeriodDate(s: string): Date | null {
+    const m = s.trim().match(/^(\d{1,2})\s+([A-Za-z]{3,})\s+(\d{4})$/);
+    if (!m) return null;
+    const day = Number(m[1]);
+    const monStr = m[2].slice(0, 3).toLowerCase();
+    const year = Number(m[3]);
+    const mon = MONTH_MAP[monStr];
+    if (!mon || day < 1 || day > 31) return null;
+    return new Date(year, mon - 1, day);
+}
+
+/** Scan all cells for a date-range like "06 Dec 2025 - 05 Jan 2026".
+ *  Returns parsed start/end or null if not found. */
+export function extractStatementPeriod(cells: Cell[]): StatementPeriod | null {
+    const periodRegex = /(\d{1,2}\s+[A-Za-z]{3,}\s+\d{4})\s*[-–]\s*(\d{1,2}\s+[A-Za-z]{3,}\s+\d{4})/;
+    for (const c of cells) {
+        const m = c.content.match(periodRegex);
+        if (m) {
+            const start = parsePeriodDate(m[1]);
+            const end = parsePeriodDate(m[2]);
+            if (start && end) return { start, end };
+        }
+    }
+    return null;
+}
+
+/** Given day + month (1–12), return the year that places the date within the
+ *  period bounds. Returns null if neither year in the period produces a match. */
+export function inferYearFromPeriod(day: number, month: number, period: StatementPeriod): number | null {
+    const years = new Set([period.start.getFullYear(), period.end.getFullYear()]);
+    for (const year of years) {
+        const candidate = new Date(year, month - 1, day);
+        if (candidate >= period.start && candidate <= period.end) {
+            return year;
+        }
+    }
+    return null;
+}
+
 /** Build a row→col→content grid from cell array */
 export function buildGrid(cells: Cell[]): Map<number, Map<number, string>> {
     const grid = new Map<number, Map<number, string>>();

@@ -1,6 +1,6 @@
 // Barclays parser - auto-detects money in/out from header, handles signed values
 // Adapted from Make scenarios, modules 1341 + 1376
-import { Cell, ParsedTransaction, ParseResult, parseDateToDDMMYYYY, buildGrid, getCell, maxRow, extractYearsFromCells } from './shared.js';
+import { Cell, ParsedTransaction, ParseResult, parseDateToDDMMYYYY, buildGrid, getCell, maxRow, extractYearsFromCells, extractStatementPeriod, inferYearFromPeriod } from './shared.js';
 
 const MONTH_ABBR: Record<string, number> = {
     jan:1,feb:2,mar:3,apr:4,may:5,jun:6,jul:7,aug:8,sep:9,oct:10,nov:11,dec:12
@@ -36,8 +36,9 @@ export function parse(cells: Cell[]): ParseResult {
         }
     }
 
-    // Determine base year from cell text (e.g. "Issued on 06 January 2026", period header)
-    // Falls back to current year if nothing found.
+    // Prefer explicit period range ("06 Dec 2025 - 05 Jan 2026") for year inference.
+    // Fall back to year-rollover tracking when the period header isn't present.
+    const period = extractStatementPeriod(cells);
     const availableYears = extractYearsFromCells(cells);
     let fallbackYear = availableYears[0] ?? new Date().getFullYear();
     let prevMonth = -1;
@@ -49,16 +50,24 @@ export function parse(cells: Cell[]): ParseResult {
         rawDate = fixOCRDate(rawDate);
         if (!rawDate) continue;
 
-        // Detect year rollover: when month drops (e.g. Dec → Jan) advance to the next
-        // known year. This handles statements that span a year boundary.
         const currMonth = monthFromRaw(rawDate);
-        if (currMonth !== null && prevMonth > 0 && currMonth < prevMonth && prevMonth >= 11) {
+        let yearForRow = fallbackYear;
+
+        if (period && currMonth !== null) {
+            const dayMatch = rawDate.match(/^(\d{1,2})/);
+            if (dayMatch) {
+                const inferred = inferYearFromPeriod(Number(dayMatch[1]), currMonth, period);
+                if (inferred !== null) yearForRow = inferred;
+            }
+        } else if (currMonth !== null && prevMonth > 0 && currMonth < prevMonth && prevMonth >= 11) {
+            // Fallback: advance year when month resets (Dec → Jan)
             const nextYear = availableYears.find(y => y > fallbackYear);
-            if (nextYear) fallbackYear = nextYear;
+            if (nextYear) { fallbackYear = nextYear; yearForRow = nextYear; }
         }
+
         if (currMonth !== null) prevMonth = currMonth;
 
-        const date = parseDateToDDMMYYYY(rawDate, fallbackYear);
+        const date = parseDateToDDMMYYYY(rawDate, yearForRow);
         if (!date) continue;
 
         // Skip summary rows
