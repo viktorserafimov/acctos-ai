@@ -1,6 +1,11 @@
 import { DocumentAnalysisClient, AzureKeyCredential } from '@azure/ai-form-recognizer';
 import { Cell } from './parsers/shared.js';
 
+export interface PageData {
+    cells: Cell[];
+    content: string;
+}
+
 let client: DocumentAnalysisClient | null = null;
 
 function getClient(): DocumentAnalysisClient {
@@ -16,8 +21,8 @@ function getClient(): DocumentAnalysisClient {
 }
 
 /** Analyze a single-page PDF buffer with Azure prebuilt-layout model.
- *  Returns all table cells across all detected tables for that page. */
-export async function analyzePage(pageBuffer: Buffer): Promise<Cell[]> {
+ *  Returns all table cells across all detected tables, plus the full page text. */
+export async function analyzePage(pageBuffer: Buffer): Promise<PageData> {
     const azureClient = getClient();
 
     const poller = await azureClient.beginAnalyzeDocument('prebuilt-layout', pageBuffer);
@@ -25,35 +30,30 @@ export async function analyzePage(pageBuffer: Buffer): Promise<Cell[]> {
 
     const cells: Cell[] = [];
 
-    if (!result.tables || result.tables.length === 0) {
-        return cells;
-    }
-
-    // Collect cells from all tables, offsetting rowIndex so tables don't overlap
-    let rowOffset = 0;
-    for (const table of result.tables) {
-        for (const cell of table.cells) {
-            cells.push({
-                rowIndex: (cell.rowIndex ?? 0) + rowOffset,
-                columnIndex: cell.columnIndex ?? 0,
-                content: (cell.content ?? '').trim(),
-            });
+    if (result.tables && result.tables.length > 0) {
+        let rowOffset = 0;
+        for (const table of result.tables) {
+            for (const cell of table.cells) {
+                cells.push({
+                    rowIndex: (cell.rowIndex ?? 0) + rowOffset,
+                    columnIndex: cell.columnIndex ?? 0,
+                    content: (cell.content ?? '').trim(),
+                });
+            }
+            const maxRow = table.cells.reduce((m, c) => Math.max(m, c.rowIndex ?? 0), 0);
+            rowOffset += maxRow + 2;
         }
-        // Advance offset past this table's rows
-        const maxRow = table.cells.reduce((m, c) => Math.max(m, c.rowIndex ?? 0), 0);
-        rowOffset += maxRow + 2; // +2 to leave a gap between tables
     }
 
-    return cells;
+    return { cells, content: result.content ?? '' };
 }
 
 /** Analyze multiple pages with a concurrency limit of 3 (matching Make's rate limit). */
-export async function analyzePages(pageBuffers: Buffer[]): Promise<Array<Cell[] | null>> {
-    // Validate credentials up-front so a missing env var fails at Extract, not Parse.
+export async function analyzePages(pageBuffers: Buffer[]): Promise<Array<PageData | null>> {
     getClient();
 
     const CONCURRENCY = 3;
-    const results: Array<Cell[] | null> = new Array(pageBuffers.length).fill(null);
+    const results: Array<PageData | null> = new Array(pageBuffers.length).fill(null);
 
     for (let i = 0; i < pageBuffers.length; i += CONCURRENCY) {
         const batch = pageBuffers.slice(i, i + CONCURRENCY);

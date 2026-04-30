@@ -100,14 +100,36 @@ async function runJob(jobId: string, filename: string, mimeType: string, fileBuf
             // ── Stage: extract (Azure DI page splitting + cell extraction) ───────
             const pageBuffers = await splitPdf(fileBuffer);
             jobStore.update(jobId, { pageCount: pageBuffers.length });
-            const pageCells = await analyzePages(pageBuffers);
+            const pageData = await analyzePages(pageBuffers);
+
+            // Combine full-page text from all pages (headers, sidebars, footers that
+            // Azure DI captures in result.content but not in table cells) into a
+            // single string. This lets year detection work even when year-bearing
+            // text only appears in the header of page 1.
+            const combinedContent = pageData
+                .filter((p): p is NonNullable<typeof p> => p !== null)
+                .map(p => p.content)
+                .join(' ');
+
+            // Build per-page cell arrays, injecting a synthetic context cell at
+            // rowIndex -1 so extractYearsFromCells() on any page can see years from
+            // the whole document (e.g. "Issued on 06 January 2026" on page 1 informs
+            // the parser running on page 2 which has no year-bearing text at all).
+            const pageCells = pageData.map(p => {
+                if (!p) return null;
+                const cells: Cell[] = [
+                    { rowIndex: -1, columnIndex: -1, content: combinedContent },
+                    ...p.cells,
+                ];
+                return cells;
+            });
 
             // ── Stage: parse (bank-specific parser) ──────────────────────────────
             jobStore.update(jobId, { currentStage: 'parse' });
 
             let bankType = classification.bankType;
             if (bankType === 'generic') {
-                const allText = pageCells.flatMap(c => c ?? []).map(c => c.content).join(' ');
+                const allText = combinedContent;
                 const detected = detectBankFromContent(allText);
                 if (detected !== 'generic') {
                     console.log(`[Orchestrator] Bank detected from content: ${detected} (filename gave generic)`);
