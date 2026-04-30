@@ -32,6 +32,7 @@ interface RecentJob {
 }
 
 const LS_KEY = 'acctos_recent_jobs';
+const LS_ACTIVE_KEY = 'acctos_active_job';
 const MAX_RECENT = 10;
 
 // ── Pipeline stage definitions ───────────────────────────────────────────────
@@ -324,6 +325,16 @@ function formatDate(iso: string) {
     });
 }
 
+interface ActiveJob { id: string; filename: string; }
+
+function saveActiveJob(id: string, filename: string) {
+    localStorage.setItem(LS_ACTIVE_KEY, JSON.stringify({ id, filename }));
+}
+function loadActiveJob(): ActiveJob | null {
+    try { return JSON.parse(localStorage.getItem(LS_ACTIVE_KEY) || 'null'); } catch { return null; }
+}
+function clearActiveJob() { localStorage.removeItem(LS_ACTIVE_KEY); }
+
 // ── Main component ───────────────────────────────────────────────────────────
 
 export default function ImportFile() {
@@ -339,24 +350,71 @@ export default function ImportFile() {
     const [previewFilename, setPreviewFilename] = useState('');
     const fileInputRef = useRef<HTMLInputElement>(null);
     const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+    const jobRef  = useRef<Job | null>(null);
 
-    // Load and verify recent jobs on mount
+    // Load and verify recent jobs on mount; also resume any in-progress job
     useEffect(() => {
         const saved = loadRecentJobs();
-        if (saved.length === 0) return;
+        if (saved.length > 0) {
+            Promise.all(saved.map(async (rj) => {
+                try {
+                    await axios.get(`/v1/processing/${rj.id}`);
+                    return rj;
+                } catch {
+                    return { ...rj, expired: true };
+                }
+            })).then(verified => {
+                const alive = verified.filter(j => !j.expired);
+                setRecentJobs(alive);
+                saveRecentJobs(alive);
+            });
+        }
 
-        Promise.all(saved.map(async (rj) => {
-            try {
-                await axios.get(`/v1/processing/${rj.id}`);
-                return rj;
-            } catch {
-                return { ...rj, expired: true };
-            }
-        })).then(verified => {
-            const alive = verified.filter(j => !j.expired);
-            setRecentJobs(alive);
-            saveRecentJobs(alive);
-        });
+        // Resume polling if a job was in-flight when the user navigated away
+        const active = loadActiveJob();
+        if (active) {
+            axios.get(`/v1/processing/${active.id}`)
+                .then(res => {
+                    const j: Job = { id: active.id, filename: active.filename, ...res.data.job };
+                    setJob(j);
+                    if (j.status === 'completed') {
+                        clearActiveJob();
+                        addToRecent(j);
+                    } else if (j.status === 'failed') {
+                        clearActiveJob();
+                    } else {
+                        startPolling(active.id);
+                    }
+                })
+                .catch(() => clearActiveJob());
+        }
+    }, []);
+
+    // Keep jobRef current so the visibility handler always sees the latest job
+    useEffect(() => { jobRef.current = job; }, [job]);
+
+    // When the user returns to the tab, immediately poll instead of waiting for
+    // the next interval tick (which may have been throttled while hidden)
+    useEffect(() => {
+        const handleVisibility = () => {
+            const j = jobRef.current;
+            if (document.hidden || !j || (j.status !== 'queued' && j.status !== 'processing')) return;
+            axios.get(`/v1/processing/${j.id}`)
+                .then(res => {
+                    const updated: Job = { id: j.id, filename: j.filename, ...res.data.job };
+                    setJob(updated);
+                    if (updated.status === 'completed' || updated.status === 'failed') {
+                        if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
+                        clearActiveJob();
+                        if (updated.status === 'completed') addToRecent(updated);
+                    } else if (!pollRef.current) {
+                        startPolling(j.id);
+                    }
+                })
+                .catch(() => {});
+        };
+        document.addEventListener('visibilitychange', handleVisibility);
+        return () => document.removeEventListener('visibilitychange', handleVisibility);
     }, []);
 
     useEffect(() => () => { if (pollRef.current) clearInterval(pollRef.current); }, []);
@@ -378,6 +436,7 @@ export default function ImportFile() {
 
     const reset = () => {
         if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
+        clearActiveJob();
         setJob(null);
         setUploadProgress(0);
         setUploadError(null);
@@ -407,13 +466,16 @@ export default function ImportFile() {
     };
 
     const startPolling = (jobId: string) => {
+        if (pollRef.current) clearInterval(pollRef.current);
         pollRef.current = setInterval(async () => {
             try {
                 const res = await axios.get(`/v1/processing/${jobId}`);
                 const j: Job = { id: jobId, ...res.data.job };
                 setJob(j);
                 if (j.status === 'completed' || j.status === 'failed') {
-                    if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
+                    clearInterval(pollRef.current!);
+                    pollRef.current = null;
+                    clearActiveJob();
                     if (j.status === 'completed') addToRecent(j);
                 }
             } catch { /* ignore transient errors */ }
@@ -437,6 +499,7 @@ export default function ImportFile() {
             });
             setUploadProgress(100);
             const jobId: string = res.data.jobId;
+            saveActiveJob(jobId, selectedFile.name);
             setJob({ id: jobId, status: 'queued', filename: selectedFile.name });
             setSelectedFile(null);
             if (fileInputRef.current) fileInputRef.current.value = '';
