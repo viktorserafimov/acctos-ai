@@ -405,6 +405,7 @@ router.post('/stripe-webhook', async (req: Request, res: Response, next: NextFun
         const PLAN_LIMITS: Record<string, { pagesLimit: number; rowsLimit: number }> = {
             starter:      { pagesLimit: 1000,  rowsLimit: 1000  },
             professional: { pagesLimit: 5000,  rowsLimit: 5000  },
+            intermediate: { pagesLimit: 10000, rowsLimit: 10000 },
             enterprise:   { pagesLimit: 15000, rowsLimit: 15000 },
         };
 
@@ -413,6 +414,7 @@ router.post('/stripe-webhook', async (req: Request, res: Response, next: NextFun
         const PAYMENT_LINK_TO_PLAN: Record<string, string> = {
             '7sYdRa2dM25YfqydQgaZi0h': 'starter',
             '3cI4gA2dM4e60vE4fGaZi0j': 'professional',
+            'eVq14o3hQfWOa6e13uaZi0s': 'intermediate',
             'aFabJ22dM8umdiqcMcaZi0i': 'enterprise',
         };
 
@@ -575,14 +577,17 @@ router.put(
             // Get current usage so we can clamp the delta
             const currentUsage = await getCurrentPeriodUsage(prisma as any, tenantId, periodStart);
 
-            // Get current documents handled for clamping
-            const docsAgg = docs !== undefined
-                ? await prisma.documentUsageAggregate.aggregate({
+            // Get current documents handled for clamping — use findMany+reduce to
+            // avoid _sum type issues if the Prisma client predates this field.
+            const docsRows = docs !== undefined
+                ? await prisma.documentUsageAggregate.findMany({
                     where: { customerId: tenantId, date: { gte: periodStart } },
-                    _sum: { documentsHandled: true },
+                    select: { documentsHandled: true },
                 })
                 : null;
-            const currentDocs = docsAgg ? ((docsAgg._sum as any).documentsHandled ?? 0) : 0;
+            const currentDocs = docsRows
+                ? docsRows.reduce((sum: number, r: { documentsHandled: number }) => sum + (r.documentsHandled ?? 0), 0)
+                : 0;
 
             const pagesDelta = pages !== undefined ? Math.max(-currentUsage.pages, pages) : 0;
             const rowsDelta  = rows  !== undefined ? Math.max(-currentUsage.rows,  rows)  : 0;
@@ -604,11 +609,11 @@ router.put(
 
             // Recalculate usage after adjustment and check pause/resume
             const newUsage = await getCurrentPeriodUsage(prisma as any, tenantId, periodStart);
-            const newDocsAgg = await prisma.documentUsageAggregate.aggregate({
+            const newDocsRows = await prisma.documentUsageAggregate.findMany({
                 where: { customerId: tenantId, date: { gte: periodStart } },
-                _sum: { documentsHandled: true },
+                select: { documentsHandled: true },
             });
-            const newDocs = (newDocsAgg._sum as any).documentsHandled ?? 0;
+            const newDocs = newDocsRows.reduce((sum: number, r: { documentsHandled: number }) => sum + (r.documentsHandled ?? 0), 0);
             try {
                 await checkAndResumeIfPossible(prisma as any, tenantId);
             } catch (_) {}
@@ -645,11 +650,12 @@ router.post(
             const PLAN_LIMITS: Record<string, { pagesLimit: number; rowsLimit: number }> = {
                 starter:      { pagesLimit: 1000,  rowsLimit: 1000  },
                 professional: { pagesLimit: 5000,  rowsLimit: 5000  },
+                intermediate: { pagesLimit: 10000, rowsLimit: 10000 },
                 enterprise:   { pagesLimit: 15000, rowsLimit: 15000 },
             };
 
             if (!planId || !PLAN_LIMITS[planId]) {
-                return next(createError('Provide planId: starter | professional | enterprise', 400, 'VALIDATION_ERROR'));
+                return next(createError('Provide planId: starter | professional | intermediate | enterprise', 400, 'VALIDATION_ERROR'));
             }
 
             await prisma.subscription.upsert({
@@ -886,6 +892,7 @@ router.put(
             const PLAN_LIMITS: Record<string, { pagesLimit: number; rowsLimit: number }> = {
                 starter:      { pagesLimit: 1000,  rowsLimit: 1000  },
                 professional: { pagesLimit: 5000,  rowsLimit: 5000  },
+                intermediate: { pagesLimit: 10000, rowsLimit: 10000 },
                 enterprise:   { pagesLimit: 15000, rowsLimit: 15000 },
             };
 

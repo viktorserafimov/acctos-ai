@@ -40,11 +40,21 @@ const PLANS = [
         features: ['5,000 PDF pages / month', '5,000 Excel rows / month'],
     },
     {
+        id: 'intermediate',
+        name: 'Intermediate',
+        priceLabel: '£1,650',
+        stripeLink: 'https://buy.stripe.com/eVq14o3hQfWOa6e13uaZi0s',
+        tier: 3,
+        pagesPerMonth: 10000,
+        rowsPerMonth: 10000,
+        features: ['10,000 PDF pages / month', '10,000 Excel rows / month'],
+    },
+    {
         id: 'enterprise',
         name: 'Enterprise',
         priceLabel: '£2,249',
         stripeLink: 'https://buy.stripe.com/aFabJ22dM8umdiqcMcaZi0i',
-        tier: 3,
+        tier: 4,
         pagesPerMonth: 15000,
         rowsPerMonth: 15000,
         features: ['15,000 PDF pages / month', '15,000 Excel rows / month'],
@@ -278,6 +288,26 @@ export default function Billing() {
         }
     };
 
+    // Downgrade confirmation state
+    const [downgradeTarget, setDowngradeTarget] = useState<(typeof PLANS)[number] | null>(null);
+    const [downgradingPlan, setDowngradingPlan] = useState(false);
+    const [downgradeError, setDowngradeError] = useState<string | null>(null);
+
+    const handleConfirmDowngrade = async () => {
+        if (!downgradeTarget) return;
+        setDowngradingPlan(true);
+        setDowngradeError(null);
+        try {
+            await axios.put('/v1/billing/set-plan', { status: downgradeTarget.id });
+            setDowngradeTarget(null);
+            await fetchData();
+        } catch (err: any) {
+            setDowngradeError(err.response?.data?.error?.message || 'Failed to downgrade plan');
+        } finally {
+            setDowngradingPlan(false);
+        }
+    };
+
     const [resettingAddon, setResettingAddon] = useState(false);
     const [resetAddonMsg, setResetAddonMsg] = useState<{ type: 'error' | 'success'; text: string } | null>(null);
 
@@ -332,7 +362,7 @@ export default function Billing() {
             if (statusRes.status === 'fulfilled') {
                 const planStatus = statusRes.value.data?.subscriptionStatus;
                 const STATUS_TO_TIER: Record<string, number> = {
-                    starter: 1, professional: 2, enterprise: 3,
+                    starter: 1, professional: 2, intermediate: 3, enterprise: 4,
                 };
                 if (planStatus && STATUS_TO_TIER[planStatus]) {
                     setCurrentTier(STATUS_TO_TIER[planStatus]);
@@ -403,9 +433,11 @@ export default function Billing() {
                         <h3>{t.currentPeriodUsage}</h3>
                         <div className="status-badge" data-status={
                             usageStatus?.subscriptionStatus === 'enterprise' ? 'enterprise' :
+                            usageStatus?.subscriptionStatus === 'intermediate' ? 'intermediate' :
                             usageStatus?.subscriptionStatus === 'starter' ? 'starter' : 'active'
                         }>
                             {usageStatus?.subscriptionStatus === 'enterprise' ? t.enterprisePlan :
+                             usageStatus?.subscriptionStatus === 'intermediate' ? 'Intermediate Plan' :
                              usageStatus?.subscriptionStatus === 'starter' ? 'Starter Plan' :
                              t.professionalPlan}
                         </div>
@@ -560,15 +592,12 @@ export default function Billing() {
                                 </button>
                             )}
                             {!isCurrentPlan && isLowerTier && (
-                                <a
-                                    href={`${plan.stripeLink}${activeTenant?.id ? `?client_reference_id=${activeTenant.id}` : ''}`}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
+                                <button
                                     className="btn-secondary btn-plan"
+                                    onClick={() => { setDowngradeTarget(plan); setDowngradeError(null); }}
                                 >
-                                    <ExternalLink size={16} />
                                     {t.downgradeTo(plan.name)}
-                                </a>
+                                </button>
                             )}
                             {!isCurrentPlan && !isLowerTier && (
                                 <a
@@ -872,6 +901,42 @@ export default function Billing() {
                 </div>
             )}
 
+            {/* Downgrade confirmation modal */}
+            {downgradeTarget && (
+                <div className="modal-overlay" onClick={() => !downgradingPlan && setDowngradeTarget(null)}>
+                    <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+                        <h3 style={{ marginBottom: '1rem' }}>Confirm Downgrade</h3>
+                        <p style={{ color: 'var(--text-muted)', fontSize: '0.95rem', marginBottom: '0.75rem' }}>
+                            Are you sure you want to downgrade to the <strong style={{ color: 'var(--text)' }}>{downgradeTarget.name}</strong> plan ({downgradeTarget.priceLabel}/month)?
+                        </p>
+                        <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', marginBottom: '1.5rem' }}>
+                            Your limits will change to <strong style={{ color: 'var(--text)' }}>{downgradeTarget.pagesPerMonth.toLocaleString()} PDF pages</strong> and <strong style={{ color: 'var(--text)' }}>{downgradeTarget.rowsPerMonth.toLocaleString()} Excel rows</strong> per month, effective immediately.
+                        </p>
+                        {downgradeError && (
+                            <p style={{ color: '#ef4444', fontSize: '0.85rem', marginBottom: '1rem', padding: '0.5rem 0.75rem', background: 'rgba(239,68,68,0.1)', borderRadius: '0.5rem', border: '1px solid rgba(239,68,68,0.3)' }}>
+                                {downgradeError}
+                            </p>
+                        )}
+                        <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'flex-end' }}>
+                            <button
+                                onClick={() => setDowngradeTarget(null)}
+                                disabled={downgradingPlan}
+                                style={{ padding: '0.6rem 1.25rem', background: 'rgba(255,255,255,0.05)', border: '1px solid var(--glass-border)', borderRadius: '0.75rem', color: 'var(--text-muted)', cursor: 'pointer', fontWeight: 600 }}
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={handleConfirmDowngrade}
+                                disabled={downgradingPlan}
+                                style={{ padding: '0.6rem 1.25rem', background: 'rgba(239,68,68,0.15)', border: '1px solid rgba(239,68,68,0.4)', borderRadius: '0.75rem', color: '#ef4444', cursor: 'pointer', fontWeight: 600, opacity: downgradingPlan ? 0.6 : 1 }}
+                            >
+                                {downgradingPlan ? 'Downgrading…' : `Yes, downgrade to ${downgradeTarget.name}`}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
             <style>{`
         .billing-header {
           display: flex;
@@ -936,6 +1001,11 @@ export default function Billing() {
           background: rgba(245, 158, 11, 0.1);
           color: #f59e0b;
         }
+        .status-badge[data-status="intermediate"] {
+          background: rgba(16, 185, 129, 0.1);
+          color: #10b981;
+          border: 1px solid rgba(16, 185, 129, 0.3);
+        }
         .quota-grid {
           display: grid;
           grid-template-columns: repeat(2, 1fr);
@@ -981,11 +1051,14 @@ export default function Billing() {
         }
         .plans-grid {
           display: grid;
-          grid-template-columns: repeat(3, 1fr);
+          grid-template-columns: repeat(4, 1fr);
           gap: 1.5rem;
           margin-bottom: 1.25rem;
         }
-        @media (max-width: 1000px) {
+        @media (max-width: 1200px) {
+          .plans-grid { grid-template-columns: repeat(2, 1fr); }
+        }
+        @media (max-width: 700px) {
           .plans-grid { grid-template-columns: 1fr; }
           .quota-grid { grid-template-columns: 1fr; }
           .addons-grid { grid-template-columns: 1fr; }
@@ -1319,6 +1392,23 @@ export default function Billing() {
         .adjust-section input:focus {
           border-color: var(--primary);
           box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.15);
+        }
+        .modal-overlay {
+          position: fixed;
+          inset: 0;
+          background: rgba(0, 0, 0, 0.6);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          z-index: 1000;
+        }
+        .modal-content {
+          background: var(--background, #0f172a);
+          border: 1px solid var(--glass-border);
+          border-radius: 1.5rem;
+          padding: 2rem;
+          width: 100%;
+          max-width: 480px;
         }
       `}</style>
         </div>

@@ -312,7 +312,7 @@ export default function Dashboard() {
         try {
             await axios.put('/v1/billing/adjust-credits', { docs: sign * amount });
             setAdjustDocsAmount('');
-            await fetchDocumentUsage();
+            await fetchDocumentUsage(docMonthFilter);
         } catch (err: any) {
             const detail = err.response?.data?.error?.message || err.message || '';
             alert(detail ? `Failed to adjust documents.\n\n${detail}` : 'Failed to adjust documents.');
@@ -757,7 +757,7 @@ export default function Dashboard() {
                                 onClick={handleResetUsage}
                                 disabled={resettingUsage}
                             >
-                                {resettingUsage ? t.resetting : t.resetPagesRows}
+                                {resettingUsage ? t.resetting : t.resetPagesRowsDocs}
                             </button>
                         </div>
                     </div>
