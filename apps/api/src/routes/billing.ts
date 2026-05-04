@@ -577,21 +577,21 @@ router.put(
             // Get current usage so we can clamp the delta
             const currentUsage = await getCurrentPeriodUsage(prisma as any, tenantId, periodStart);
 
-            // Get current documents handled for clamping — use findMany+reduce to
-            // avoid _sum type issues if the Prisma client predates this field.
+            // Get ALL-TIME docs total for clamping — no date filter so that docs
+            // processed before the last billing reset can still be removed.
             const docsRows = docs !== undefined
                 ? await prisma.documentUsageAggregate.findMany({
-                    where: { customerId: tenantId, date: { gte: periodStart } },
+                    where: { customerId: tenantId },
                     select: { documentsHandled: true },
                 })
                 : null;
-            const currentDocs = docsRows
+            const totalDocs = docsRows
                 ? docsRows.reduce((sum: number, r: { documentsHandled: number }) => sum + (r.documentsHandled ?? 0), 0)
                 : 0;
 
             const pagesDelta = pages !== undefined ? Math.max(-currentUsage.pages, pages) : 0;
             const rowsDelta  = rows  !== undefined ? Math.max(-currentUsage.rows,  rows)  : 0;
-            const docsDelta  = docs  !== undefined ? Math.max(-currentDocs, docs)          : 0;
+            const docsDelta  = docs  !== undefined ? Math.max(-totalDocs, docs)            : 0;
 
             // Upsert today's correction into DocumentUsageAggregate
             const today = new Date();
