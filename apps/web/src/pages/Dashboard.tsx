@@ -150,66 +150,51 @@ export default function Dashboard() {
         } catch { /* ignore */ }
     };
 
-    const fetchBillingPeriodDocs = async () => {
-        try {
-            const now = new Date();
-            const pad = (n: number) => String(n).padStart(2, '0');
-            const resetDay = 4;
-            let from: string;
-            if (now.getDate() >= resetDay) {
-                from = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(resetDay)}`;
-            } else {
-                const prev = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-                from = `${prev.getFullYear()}-${pad(prev.getMonth() + 1)}-${pad(resetDay)}`;
-            }
-            const to = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
-            const res = await axios.get('/v1/usage/document-usage', { params: { from, to } });
-            setBillingDocsTotal(res.data?.totals?.documentsHandled ?? 0);
-        } catch { /* ignore */ }
-    };
-
     const fetchDocumentUsage = async (monthFilter: '30d' | 'current-month' | 'prev-month' = '30d') => {
         setLoading(true);
         try {
             const now = new Date();
             const pad = (n: number) => String(n).padStart(2, '0');
             const localDate = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+            const resetDay = usageLimits?.billingResetDay ?? 4;
+
+            // Billing period dates — always needed for the docs card, independent of chart filter
+            const billingFrom = now.getDate() >= resetDay
+                ? `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(resetDay)}`
+                : (() => { const p = new Date(now.getFullYear(), now.getMonth() - 1, 1); return `${p.getFullYear()}-${pad(p.getMonth() + 1)}-${pad(resetDay)}`; })();
+            const billingTo = localDate(now);
+
             let from: string;
             let to: string;
             if (monthFilter === 'current-month') {
-                // Use the actual billing period (4th → 3rd), not the calendar month.
-                if (usageLimits?.lastResetAt) {
-                    from = usageLimits.lastResetAt.split('T')[0];
-                } else {
-                    const resetDay = usageLimits?.billingResetDay ?? 4;
-                    if (now.getDate() >= resetDay) {
-                        from = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(resetDay)}`;
-                    } else {
-                        const prev = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-                        from = `${prev.getFullYear()}-${pad(prev.getMonth() + 1)}-${pad(resetDay)}`;
-                    }
-                }
-                to = localDate(now);
+                from = usageLimits?.lastResetAt ? usageLimits.lastResetAt.split('T')[0] : billingFrom;
+                to = billingTo;
             } else if (monthFilter === 'prev-month') {
-                const first = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-                const last  = new Date(now.getFullYear(), now.getMonth(), 0);
-                from = localDate(first);
-                to   = localDate(last);
+                const curStart = now.getDate() >= resetDay
+                    ? new Date(now.getFullYear(), now.getMonth(), resetDay)
+                    : new Date(now.getFullYear(), now.getMonth() - 1, resetDay);
+                const prevStart = new Date(curStart.getFullYear(), curStart.getMonth() - 1, resetDay);
+                const prevEnd   = new Date(curStart.getFullYear(), curStart.getMonth(), resetDay - 1);
+                from = localDate(prevStart);
+                to   = localDate(prevEnd);
             } else {
-                // default: last 30 days
                 const f = new Date(now);
                 f.setDate(f.getDate() - 30);
                 from = localDate(f);
                 to   = localDate(now);
             }
 
-            const [docRes, limitsRes] = await Promise.allSettled([
+            const [docRes, limitsRes, billingDocRes] = await Promise.allSettled([
                 axios.get('/v1/usage/document-usage', { params: { from, to } }),
                 axios.get('/v1/billing/usage-status'),
+                axios.get('/v1/usage/document-usage', { params: { from: billingFrom, to: billingTo } }),
             ]);
 
             if (docRes.status === 'fulfilled') {
                 setDocumentUsage(docRes.value.data);
+            }
+            if (billingDocRes.status === 'fulfilled') {
+                setBillingDocsTotal(billingDocRes.value.data?.totals?.documentsHandled ?? 0);
             }
             if (limitsRes.status === 'fulfilled') {
                 const d = limitsRes.value.data;
@@ -349,7 +334,7 @@ export default function Dashboard() {
         try {
             await axios.put('/v1/billing/adjust-credits', { docs: sign * amount });
             setAdjustDocsAmount('');
-            await Promise.all([fetchDocumentUsage(docMonthFilter), fetchBillingPeriodDocs()]);
+            await fetchDocumentUsage(docMonthFilter);
         } catch (err: any) {
             const detail = err.response?.data?.error?.message || err.message || '';
             alert(detail ? `Failed to adjust documents.\n\n${detail}` : 'Failed to adjust documents.');
@@ -448,7 +433,6 @@ export default function Dashboard() {
             fetchOpenAICosts(activeDays);
         } else {
             fetchDocumentUsage(docMonthFilter);
-            fetchBillingPeriodDocs();
         }
     }, [activeDays, activeTab]);
 
@@ -1007,7 +991,7 @@ export default function Dashboard() {
                                 <span className="doc-usage-current" style={{ color: '#10b981' }}>{billingDocsTotal.toLocaleString()}</span>
                             </div>
                             <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginTop: '0.75rem' }}>
-                                Documents processed through the system in the selected period
+                                Documents processed in the current billing cycle
                             </p>
                             {isAdmin && (
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginTop: '1rem', flexWrap: 'wrap' }}>
