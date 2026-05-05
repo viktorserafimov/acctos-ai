@@ -152,22 +152,24 @@ export default function Dashboard() {
         setLoading(true);
         try {
             const now = new Date();
+            const pad = (n: number) => String(n).padStart(2, '0');
+            const localDate = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
             let from: string;
             let to: string;
             if (monthFilter === 'current-month') {
-                from = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0];
-                to = now.toISOString().split('T')[0];
+                from = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-01`;
+                to = localDate(now);
             } else if (monthFilter === 'prev-month') {
                 const first = new Date(now.getFullYear(), now.getMonth() - 1, 1);
                 const last  = new Date(now.getFullYear(), now.getMonth(), 0);
-                from = first.toISOString().split('T')[0];
-                to   = last.toISOString().split('T')[0];
+                from = localDate(first);
+                to   = localDate(last);
             } else {
                 // default: last 30 days
                 const f = new Date(now);
                 f.setDate(f.getDate() - 30);
-                from = f.toISOString().split('T')[0];
-                to   = now.toISOString().split('T')[0];
+                from = localDate(f);
+                to   = localDate(now);
             }
 
             const [docRes, limitsRes] = await Promise.allSettled([
@@ -1092,9 +1094,9 @@ export default function Dashboard() {
                                 </div>
                             </div>
                             {documentUsage && documentUsage.days.length > 0 && (() => {
-                                const totalPages = documentUsage.days.reduce((s, d) => s + (d.pagesSpent ?? 0), 0);
-                                const totalRows  = documentUsage.days.reduce((s, d) => s + (d.rowsUsed  ?? 0), 0);
-                                const totalDocs  = documentUsage.days.reduce((s, d) => s + (d.documentsHandled ?? 0), 0);
+                                const totalPages = Math.max(0, documentUsage.days.reduce((s, d) => s + (d.pagesSpent ?? 0), 0));
+                                const totalRows  = Math.max(0, documentUsage.days.reduce((s, d) => s + (d.rowsUsed  ?? 0), 0));
+                                const totalDocs  = Math.max(0, documentUsage.days.reduce((s, d) => s + (d.documentsHandled ?? 0), 0));
                                 return (
                                     <div style={{ display: 'flex', gap: '1rem', marginBottom: '1.25rem', flexWrap: 'wrap' }}>
                                         <div style={{ flex: 1, minWidth: 140, background: 'rgba(99,102,241,0.08)', border: '1px solid rgba(99,102,241,0.2)', borderRadius: '0.75rem', padding: '0.75rem 1rem' }}>

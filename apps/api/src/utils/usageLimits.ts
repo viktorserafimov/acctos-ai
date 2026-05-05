@@ -126,8 +126,8 @@ export async function getCurrentPeriodUsage(
         _sum: { pagesSpent: true, rowsUsed: true },
     });
     return {
-        pages: agg._sum.pagesSpent ?? 0,
-        rows: agg._sum.rowsUsed ?? 0,
+        pages: Math.max(0, agg._sum.pagesSpent ?? 0),
+        rows: Math.max(0, agg._sum.rowsUsed ?? 0),
     };
 }
 
