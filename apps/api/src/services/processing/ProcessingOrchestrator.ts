@@ -113,6 +113,7 @@ async function runJob(jobId: string, filename: string, mimeType: string, fileBuf
             const pageBuffers = await splitPdf(fileBuffer);
             jobStore.update(jobId, { pageCount: pageBuffers.length });
             const pageData = await analyzePages(pageBuffers);
+            console.log(`[Orchestrator] Azure DI results per page:`, pageData.map((p, i) => `page${i+1}:${p?.cells?.length ?? 'null'}cells`));
 
             // Track Azure Document Intelligence usage
             if (tracking) {

@@ -32,15 +32,132 @@ function findCode(row: Row): string {
     return '';
 }
 
+// ── Text-content fallback (used when Azure DI finds no table cells) ──────────
+// The HSBC Kinetic layout is not recognised as a table by Azure DI's
+// prebuilt-layout model, so we parse directly from result.content text.
+// The orchestrator injects the full combined-page text as a synthetic cell
+// at rowIndex:-1 / columnIndex:-1.
+
+const TEXT_DATE_RE = /^(\d{1,2}\s+[A-Za-z]{3}\s+\d{2,4})\s*/;
+const AMOUNT_END_1 = /([\d,]+\.\d{2})$/;
+const AMOUNT_END_2 = /([\d,]+\.\d{2})\s+([\d,]+\.\d{2})$/;
+
+function splitAmounts(text: string): { rest: string; amt1: string } {
+    const m2 = text.match(AMOUNT_END_2);
+    if (m2) return { rest: text.slice(0, text.length - m2[0].length).trim(), amt1: m2[1] };
+    const m1 = text.match(AMOUNT_END_1);
+    if (m1) return { rest: text.slice(0, text.length - m1[0].length).trim(), amt1: m1[1] };
+    return { rest: text, amt1: '' };
+}
+
+function parseFromContent(content: string): ParsedTransaction[] {
+    const transactions: ParsedTransaction[] = [];
+    const lines = content.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+
+    let inSection = false;
+    let currentDate = '';
+    let pendingType = '';
+    let pendingDesc = '';
+    let hasPending = false;
+
+    const flush = (moneyOut: string, moneyIn: string) => {
+        if (!hasPending || !currentDate) { hasPending = false; return; }
+        const desc = pendingDesc.trim();
+        const type = pendingType;
+        hasPending = false; pendingType = ''; pendingDesc = '';
+        if (!desc || /balance\s+(brought|carried)\s+forward/i.test(desc)) return;
+        if (!moneyOut && !moneyIn) return;
+        transactions.push({
+            date: currentDate,
+            type,
+            description: desc,
+            moneyOut: moneyOut.replace(/,/g, ''),
+            moneyIn:  moneyIn.replace(/,/g, ''),
+            balance:  '',
+        });
+    };
+
+    for (const line of lines) {
+        if (!inSection) {
+            if (/^Date\s+Pay/i.test(line)) inSection = true;
+            continue;
+        }
+
+        // Skip repeated headers and footer lines present on every page
+        if (/^Date\s+Pay/i.test(line)) continue;
+        if (/you can contact/i.test(line)) continue;
+        if (/have a question/i.test(line)) continue;
+        if (/^Account Name\b/i.test(line)) continue;
+        if (/Sheet\s+Number/i.test(line)) continue;
+        if (/^(Credit|Debit)\s+interest/i.test(line)) continue;
+
+        let rest = line;
+
+        // Pull date off the front of the line if present
+        const dateMatch = rest.match(TEXT_DATE_RE);
+        if (dateMatch) {
+            const parsed = parseDateToDDMMYYYY(dateMatch[1]);
+            if (parsed) currentDate = parsed;
+            rest = rest.slice(dateMatch[0].length).trim();
+        }
+
+        // Detect transaction code at start of remaining text
+        let foundCode = '';
+        for (const code of TRANSACTION_CODES) {
+            if (rest === code || rest.startsWith(code + ' ')) {
+                foundCode = code;
+                rest = rest.slice(code.length).trim();
+                break;
+            }
+        }
+
+        if (foundCode) {
+            flush('', '');
+            pendingType = foundCode;
+            hasPending = true;
+            const { rest: descPart, amt1 } = splitAmounts(rest);
+            pendingDesc = descPart;
+            if (amt1) {
+                const isCredit = foundCode === 'CR';
+                flush(isCredit ? '' : amt1, isCredit ? amt1 : '');
+            }
+        } else if (hasPending) {
+            // Continuation line: location text and/or amount for the current transaction
+            const { rest: locPart, amt1 } = splitAmounts(rest);
+            if (locPart) pendingDesc = `${pendingDesc} ${locPart}`.trim();
+            if (amt1) {
+                const isCredit = pendingType === 'CR';
+                flush(isCredit ? '' : amt1, isCredit ? amt1 : '');
+            }
+        }
+    }
+
+    flush('', '');
+    return transactions;
+}
+
+// ── Table-cell-based parser (primary path) ────────────────────────────────────
+
 export function parse(cells: Cell[]): ParseResult {
-    const hasCol5 = cells.some(c => c.columnIndex === 5);
+    // Azure DI does not detect the HSBC Kinetic layout as a table — fall back
+    // to parsing from the text content injected as the synthetic context cell.
+    const realCells = cells.filter(c => c.rowIndex >= 0);
+    if (realCells.length === 0) {
+        const contextCell = cells.find(c => c.rowIndex === -1);
+        if (contextCell?.content) {
+            return { transactions: parseFromContent(contextCell.content) };
+        }
+        return { transactions: [] };
+    }
+
+    const hasCol5 = realCells.some(c => c.columnIndex === 5);
 
     // Group cells into rows: a new row starts when columnIndex === 0
     const rawRows: Row[] = [];
     let currentRow = emptyRow();
 
     // Sort by rowIndex then columnIndex
-    const sorted = [...cells].sort((a, b) => a.rowIndex !== b.rowIndex ? a.rowIndex - b.rowIndex : a.columnIndex - b.columnIndex);
+    const sorted = [...realCells].sort((a, b) => a.rowIndex !== b.rowIndex ? a.rowIndex - b.rowIndex : a.columnIndex - b.columnIndex);
 
     let lastRowIndex = -1;
     for (const cell of sorted) {
@@ -48,7 +165,6 @@ export function parse(cells: Cell[]): ParseResult {
         const content = normStr(cell.content);
 
         if (cell.rowIndex !== lastRowIndex) {
-            // New table row
             if (lastRowIndex !== -1 && rowHasData(currentRow)) {
                 rawRows.push(currentRow);
                 currentRow = emptyRow();
@@ -61,7 +177,6 @@ export function parse(cells: Cell[]): ParseResult {
         if (col === 0) {
             currentRow.c0 = content;
         } else if (col >= 1 && col <= 6) {
-            // If col 1 has a transaction code and row already has data, start new logical row
             if (col === 1 && content && TRANSACTION_CODES.includes(content.trim()) && rowHasData(currentRow)) {
                 rawRows.push(currentRow);
                 currentRow = emptyRow();
