@@ -60,11 +60,34 @@ function parseAllCells(pageCells: Array<Cell[] | null>, bankType: BankType): Par
         if (pendingRow) allTransactions.push(pendingRow);
     } else {
         const parser = getParser(bankType);
+
+        // Merge all pages into one flat cell array so that state like currentDate
+        // carries across page boundaries. Each page's row indices are offset to
+        // avoid collisions. Synthetic context cells (rowIndex < 0) are kept once.
+        const combined: Cell[] = [];
+        let rowOffset = 0;
+        let syntheticInjected = false;
+
         for (const cells of pageCells) {
             if (!cells) continue;
-            const result = parser(cells);
-            allTransactions.push(...result.transactions);
+
+            let pageMaxRow = -1;
+            for (const c of cells) {
+                if (c.rowIndex < 0) {
+                    if (!syntheticInjected) {
+                        combined.push(c);
+                        syntheticInjected = true;
+                    }
+                } else {
+                    combined.push({ ...c, rowIndex: c.rowIndex + rowOffset });
+                    if (c.rowIndex > pageMaxRow) pageMaxRow = c.rowIndex;
+                }
+            }
+            if (pageMaxRow >= 0) rowOffset += pageMaxRow + 10000;
         }
+
+        const result = parser(combined);
+        allTransactions.push(...result.transactions);
     }
 
     return allTransactions;
