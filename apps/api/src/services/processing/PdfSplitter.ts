@@ -1,7 +1,7 @@
 import { PDFDocument } from 'pdf-lib';
 
 export async function splitPdf(pdfBuffer: Buffer): Promise<Buffer[]> {
-    const srcDoc = await PDFDocument.load(pdfBuffer);
+    const srcDoc = await PDFDocument.load(pdfBuffer, { ignoreEncryption: true });
     const pageCount = srcDoc.getPageCount();
     const pages: Buffer[] = [];
 
@@ -17,6 +17,6 @@ export async function splitPdf(pdfBuffer: Buffer): Promise<Buffer[]> {
 }
 
 export async function getPageCount(pdfBuffer: Buffer): Promise<number> {
-    const doc = await PDFDocument.load(pdfBuffer);
+    const doc = await PDFDocument.load(pdfBuffer, { ignoreEncryption: true });
     return doc.getPageCount();
 }
