@@ -90,8 +90,16 @@ export function parse(cells: Cell[]): ParseResult {
         .map(c => normStr(c.content))
         .join(' ');
 
-    // ── Column layout detection from header row (row 0) ───────────────────────
-    const header = grid.get(0);
+    // ── Column layout detection — scan first rows to find actual header ──────
+    // Row 0 may be a spanning "Period covered:" cell; the real header can be
+    // on row 1 (or later). Scan up to the first 8 rows.
+    let header: Map<number, string> | undefined;
+    let headerRowIndex = -1;
+    for (let r = 0; r <= Math.min(8, rows); r++) {
+        const row = grid.get(r);
+        if (row && isHeaderRow(row)) { header = row; headerRowIndex = r; break; }
+    }
+
     let is6col = false;
     let dateCol = 0, d1Col = 1, d2Col = -1;
     let outCol = -1, inCol = -1, amountCol = -1, balCol = -1, odCol = -1;
@@ -151,7 +159,7 @@ export function parse(cells: Cell[]): ParseResult {
         current = null;
     }
 
-    for (let r = 1; r <= rows; r++) {
+    for (let r = headerRowIndex + 1; r <= rows; r++) {
         const row = grid.get(r);
         if (!row) continue;
 
@@ -203,15 +211,17 @@ export function parse(cells: Cell[]): ParseResult {
             flush();
             currentDate = date;
             current = { date: currentDate, type: '', description: desc, moneyOut, moneyIn, balance };
-        } else if (hasAmount && currentDate) {
-            flush();
-            current = { date: currentDate, type: '', description: desc, moneyOut, moneyIn, balance };
-        } else if (current && (desc || balance)) {
-            // Continuation row — append description, fill in any missing fields
+        } else if (current) {
+            // Continuation row — always merge into current transaction.
+            // NatWest spreads amounts onto the last continuation row, so we
+            // must not flush here even when an amount is present.
             if (desc)                          current.description = normStr(`${current.description} ${desc}`);
             if (balance && !current.balance)   current.balance  = balance;
             if (moneyOut && !current.moneyOut) current.moneyOut = moneyOut;
             if (moneyIn  && !current.moneyIn)  current.moneyIn  = moneyIn;
+        } else if (hasAmount && currentDate) {
+            // Orphaned amount with no preceding date row (page-break edge case)
+            current = { date: currentDate, type: '', description: desc, moneyOut, moneyIn, balance };
         }
     }
 
