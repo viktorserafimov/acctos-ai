@@ -80,11 +80,12 @@ export function parse(cells: Cell[]): ParseResult {
 
             const amountNum = parseMoney(amountRaw);
             const balNum    = parseMoney(balanceRaw);
-            if (amountNum === null || amountNum <= 0 || balNum === null) continue;
+            // amountNum may be negative (Monzo signs debits with "-"); skip only null/zero
+            if (amountNum === null || amountNum === 0 || balNum === null) continue;
 
-            const isNegative = /-\s*\d/.test(amountRaw);
-            const amt = formatMoney(amountNum);
-            const bal = formatMoney(balNum);
+            const isNegative = amountNum < 0;
+            const amt = formatMoney(Math.abs(amountNum));
+            const bal = formatMoney(Math.abs(balNum));
 
             transactions.push({
                 date, type: '', description: description || 'Unknown',
