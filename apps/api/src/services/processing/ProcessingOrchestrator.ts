@@ -34,6 +34,7 @@ function getParser(bankType: BankType): StandardParser {
     switch (bankType) {
         case 'hsbc':       return parseHsbc;
         case 'revolut':    return parseRevolut;
+        case 'monzo':      return parseMonzo;
         case 'wise':       return parseWise;
         case 'starling':   return parseStarling;
         case 'natwest':    return parseNatwest;
@@ -49,46 +50,35 @@ function getParser(bankType: BankType): StandardParser {
 function parseAllCells(pageCells: Array<Cell[] | null>, bankType: BankType): ParsedTransaction[] {
     const allTransactions: ParsedTransaction[] = [];
 
-    if (bankType === 'monzo') {
-        let pendingRow: ParsedTransaction | null | undefined = null;
-        for (const cells of pageCells) {
-            if (!cells) continue;
-            const result = parseMonzo(cells, { pendingFromPrev: pendingRow });
-            allTransactions.push(...result.transactions);
-            pendingRow = result.pendingRow;
-        }
-        if (pendingRow) allTransactions.push(pendingRow);
-    } else {
-        const parser = getParser(bankType);
+    const parser = getParser(bankType);
 
-        // Merge all pages into one flat cell array so that state like currentDate
-        // carries across page boundaries. Each page's row indices are offset to
-        // avoid collisions. Synthetic context cells (rowIndex < 0) are kept once.
-        const combined: Cell[] = [];
-        let rowOffset = 0;
-        let syntheticInjected = false;
+    // Merge all pages into one flat cell array so that state like currentDate
+    // carries across page boundaries. Each page's row indices are offset to
+    // avoid collisions. Synthetic context cells (rowIndex < 0) are kept once.
+    const combined: Cell[] = [];
+    let rowOffset = 0;
+    let syntheticInjected = false;
 
-        for (const cells of pageCells) {
-            if (!cells) continue;
+    for (const cells of pageCells) {
+        if (!cells) continue;
 
-            let pageMaxRow = -1;
-            for (const c of cells) {
-                if (c.rowIndex < 0) {
-                    if (!syntheticInjected) {
-                        combined.push(c);
-                        syntheticInjected = true;
-                    }
-                } else {
-                    combined.push({ ...c, rowIndex: c.rowIndex + rowOffset });
-                    if (c.rowIndex > pageMaxRow) pageMaxRow = c.rowIndex;
+        let pageMaxRow = -1;
+        for (const c of cells) {
+            if (c.rowIndex < 0) {
+                if (!syntheticInjected) {
+                    combined.push(c);
+                    syntheticInjected = true;
                 }
+            } else {
+                combined.push({ ...c, rowIndex: c.rowIndex + rowOffset });
+                if (c.rowIndex > pageMaxRow) pageMaxRow = c.rowIndex;
             }
-            if (pageMaxRow >= 0) rowOffset += pageMaxRow + 10000;
         }
-
-        const result = parser(combined);
-        allTransactions.push(...result.transactions);
+        if (pageMaxRow >= 0) rowOffset += pageMaxRow + 10000;
     }
+
+    const result = parser(combined);
+    allTransactions.push(...result.transactions);
 
     return allTransactions;
 }
