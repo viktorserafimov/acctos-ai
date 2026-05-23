@@ -77,6 +77,11 @@ if (transactions.length > 0) {
     transactions.slice(-3).forEach((t, i) =>
         console.log(`  [${transactions.length - 2 + i}] ${t.date} | ${t.description.slice(0, 45).padEnd(45)} | out:${(t.moneyOut||'').padStart(10)} in:${(t.moneyIn||'').padStart(10)} bal:${t.balance}`)
     );
+
+    const totalOut = transactions.reduce((s, t) => s + (parseFloat(t.moneyOut?.replace(/,/g,'') || '0') || 0), 0);
+    const totalIn  = transactions.reduce((s, t) => s + (parseFloat(t.moneyIn?.replace(/,/g,'')  || '0') || 0), 0);
+    console.log(`\nTOTALS  →  Money Out: ${totalOut.toFixed(2).padStart(12)}   Money In: ${totalIn.toFixed(2).padStart(12)}   Net: ${(totalIn - totalOut).toFixed(2)}`);
+    console.log('         ↑ compare these with the PDF statement totals');
 }
 
 console.log('\nRunning categorization...');
