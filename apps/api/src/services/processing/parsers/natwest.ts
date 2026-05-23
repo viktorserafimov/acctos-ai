@@ -11,6 +11,17 @@ const MONTH_MAP: Record<string, number> = {
     jul:7, aug:8, sep:9, oct:10, nov:11, dec:12,
 };
 
+// Strip leading card-terminal or sort-code references that Azure DI puts in D2.
+// E.g. "3442 02APR24 CD Rest of description" → "Rest of description"
+//      "602012 02APR 1314 Merchant Name"      → "Merchant Name"
+function stripRefPrefix(s: string): string {
+    // 4-digit card terminal + DDMMMYY + optional CD/D/C suffix: "3442 02APR24 CD"
+    s = s.replace(/^\d{4}\s+\d{2}[A-Za-z]{3}\d{2}\s*[CDcd]{0,2}\s*/i, '');
+    // 6-digit sort code + DDMMM + 4-digit time: "602012 02APR 1314"
+    s = s.replace(/^\d{6}\s+\d{2}[A-Za-z]{3}\s+\d{4}\s*/i, '');
+    return normStr(s);
+}
+
 function amt(s: string): string {
     const n = parseMoney(s);
     return n !== null && n !== 0 ? formatMoney(Math.abs(n)) : '';
@@ -65,7 +76,9 @@ function resolveYear(monthNum: number, period: Period | null, fallback: number):
 
 function parseDate(rawDate: string, period: Period | null, fallback: number): string {
     if (!rawDate) return '';
-    const direct = parseDateToDDMMYYYY(rawDate);
+    // Only trust a direct parse when the raw string already contains a 4-digit year;
+    // otherwise parseDateToDDMMYYYY falls back to year 2000 for "DD MMM" dates.
+    const direct = /\b\d{4}\b/.test(rawDate) ? parseDateToDDMMYYYY(rawDate) : '';
     if (direct) return direct;
     // "5 MAR" / "05 March"
     const short = rawDate.match(/^(\d{1,2})\s+([A-Za-z]{3,})$/);
@@ -101,7 +114,7 @@ export function parse(cells: Cell[]): ParseResult {
     }
 
     let is6col = false;
-    let dateCol = 0, d1Col = 1, d2Col = -1;
+    let dateCol = 0, d1Col = 1, d2Col = -1, typeCol = -1;
     let outCol = -1, inCol = -1, amountCol = -1, balCol = -1, odCol = -1;
 
     if (header) {
@@ -113,6 +126,7 @@ export function parse(cells: Cell[]): ParseResult {
             if (lo === 'date' || lo.startsWith('date '))                                      dateCol = c;
             else if (lo.includes('detail')) { hasDetails = true; detailCount++; if (detailCount === 1) d1Col = c; else d2Col = c; }
             else if (lo.includes('desc') || lo.includes('narrat'))                            d1Col = c;
+            else if (lo === 'type' || lo.startsWith('type '))                                 typeCol = c;
             else if (lo.includes('withdrawn') || lo.includes('paid out') || lo.includes('debit')) { hasWithdrawn = true; outCol = c; }
             else if (lo === 'od')                                                              odCol = c;
             else if (lo.includes('paid in') || lo.includes('credit'))                        { hasPaidIn = true; inCol = c; }
@@ -121,6 +135,8 @@ export function parse(cells: Cell[]): ParseResult {
         }
 
         if (balCol === -1) balCol = Math.max(...header.keys());
+        // If the highest column is an amount column there is no balance column
+        if (balCol === outCol || balCol === inCol) balCol = -1;
         is6col = hasDetails && hasWithdrawn && hasPaidIn;
 
         // Blank D2 column: gap between d1Col and outCol in the 6-col layout
@@ -153,7 +169,7 @@ export function parse(cells: Cell[]): ParseResult {
 
     function flush() {
         if (!current) return;
-        if ((current.moneyIn || current.moneyOut) && current.description) {
+        if ((current.moneyIn || current.moneyOut) && (current.description || current.type)) {
             transactions.push(current);
         }
         current = null;
@@ -168,10 +184,18 @@ export function parse(cells: Cell[]): ParseResult {
 
         const rawDate = normStr(getCell(grid, r, dateCol));
         const d1      = normStr(getCell(grid, r, d1Col));
-        const d2      = d2Col >= 0 ? normStr(getCell(grid, r, d2Col)) : '';
-        const desc    = d2 ? normStr(`${d1} ${d2}`) : d1;
-        const rawBal  = normStr(getCell(grid, r, balCol));
-        const rawOD   = odCol >= 0 ? normStr(getCell(grid, r, odCol)) : '';
+        const d2raw   = d2Col >= 0 ? normStr(getCell(grid, r, d2Col)) : '';
+        const d2      = stripRefPrefix(d2raw);
+        const rawBal  = balCol >= 0 ? normStr(getCell(grid, r, balCol)) : '';
+        // OD indicator: from dedicated header column if present; otherwise check the cell
+        // immediately right of the balance column (NatWest puts "OD" there as a separate cell).
+        // Guard: only check balCol+1 when balCol is valid (avoid reading date/desc columns).
+        const rawOD   = odCol >= 0 ? normStr(getCell(grid, r, odCol))
+            : (balCol >= 0 ? normStr(getCell(grid, r, balCol + 1)) : '');
+        // For "Date|Description|Type|Paid in|Paid out" format: typeCol is set, d1=description.
+        // For "Date|Details|[blank]|Withdrawn|Paid In|Balance" format: typeCol=-1, d1=type, d2=description.
+        const txType  = typeCol >= 0 ? normStr(getCell(grid, r, typeCol)) : d1;
+        const txDesc  = typeCol >= 0 ? d1 : d2;
 
         // ── Amount calculation ────────────────────────────────────────────────
         let moneyIn = '', moneyOut = '';
@@ -210,18 +234,25 @@ export function parse(cells: Cell[]): ParseResult {
         if (date) {
             flush();
             currentDate = date;
-            current = { date: currentDate, type: '', description: desc, moneyOut, moneyIn, balance };
+            current = { date: currentDate, type: txType, description: txDesc, moneyOut, moneyIn, balance };
         } else if (current) {
             // Continuation row — always merge into current transaction.
-            // NatWest spreads amounts onto the last continuation row, so we
+            // NatWest 6-col spreads amounts onto the last continuation row, so we
             // must not flush here even when an amount is present.
-            if (desc)                          current.description = normStr(`${current.description} ${desc}`);
+            if (typeCol >= 0) {
+                // 4/5-col export format: d1 is the description column
+                if (d1) current.description = normStr(`${current.description} ${d1}`);
+            } else {
+                // 6-col statement format: d1 is type, d2 is description
+                if (d1 && !current.type) current.type        = d1;
+                if (d2)                  current.description = normStr(`${current.description} ${d2}`);
+            }
             if (balance && !current.balance)   current.balance  = balance;
             if (moneyOut && !current.moneyOut) current.moneyOut = moneyOut;
             if (moneyIn  && !current.moneyIn)  current.moneyIn  = moneyIn;
         } else if (hasAmount && currentDate) {
             // Orphaned amount with no preceding date row (page-break edge case)
-            current = { date: currentDate, type: '', description: desc, moneyOut, moneyIn, balance };
+            current = { date: currentDate, type: txType, description: txDesc, moneyOut, moneyIn, balance };
         }
     }
 
