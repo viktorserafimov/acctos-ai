@@ -83,14 +83,31 @@ export function parse(cells: Cell[]): ParseResult {
             // amountNum may be negative (Monzo signs debits with "-"); skip only null/zero
             if (amountNum === null || amountNum === 0 || balNum === null) continue;
 
-            const isNegative = amountNum < 0;
-            const amt = formatMoney(Math.abs(amountNum));
-            const bal = formatMoney(Math.abs(balNum));
+            const absAmt = Math.abs(amountNum);
+            const bal    = formatMoney(Math.abs(balNum));
+
+            // Primary: use sign from amount value
+            let isOut = amountNum < 0;
+
+            // Secondary: if amount appears positive but balance delta says money left,
+            // OCR dropped the minus sign — correct direction using balance delta
+            if (!isOut) {
+                const nextRow = table[i + 1];
+                if (nextRow) {
+                    const nextBal = parseMoney(nextRow.cols[3]);
+                    if (nextBal !== null) {
+                        const delta = balNum - nextBal;
+                        if (delta < -0.01 && Math.abs(Math.abs(delta) - absAmt) <= 0.01) {
+                            isOut = true;
+                        }
+                    }
+                }
+            }
 
             transactions.push({
                 date, type: '', description: description || 'Unknown',
-                moneyIn:  isNegative ? '' : amt,
-                moneyOut: isNegative ? amt : '',
+                moneyIn:  isOut ? '' : formatMoney(absAmt),
+                moneyOut: isOut ? formatMoney(absAmt) : '',
                 balance:  bal,
             });
             continue;
