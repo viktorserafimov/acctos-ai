@@ -1,4 +1,8 @@
-// Revolut parser — 3 layouts (5+ column tables only):
+// Revolut parser — covers two OCR variants, 3 table layouts each:
+//   Variant A: content contains "Revolut Ltd (No"    — English Business
+//   Variant B: content starts with "Revolut Business" — Bulgarian/English Business
+//
+// Layouts (5+ column tables only):
 //   5-col in/out:   [date, desc, out, in, balance]         — header keyword detection
 //   6-col:          [date, type, desc, out, in, balance]   — explicit columns
 //   5-col legacy:   [date, type, desc, amount, balance]    — direction from balance delta
@@ -7,6 +11,17 @@ import {
     normStr, parseMoney, formatMoney, buildGrid, getCell, maxRow, maxCol,
     parseDateToDDMMYYYY,
 } from './shared.js';
+
+// Transaction codes that always indicate incoming money (Revolut Business legend)
+const IN_CODES  = new Set(['MOA', 'MOR', 'EXI']);
+const OUT_CODES = new Set(['CAR', 'MOS', 'ATM', 'EXO', 'FEE']);
+
+function directionByCode(code: string): 'IN' | 'OUT' | '' {
+    const c = normStr(code).toUpperCase();
+    if (IN_CODES.has(c))  return 'IN';
+    if (OUT_CODES.has(c)) return 'OUT';
+    return '';
+}
 
 function isHeaderRow(cols: string[]): boolean {
     const joined = cols.join(' ').toLowerCase();
@@ -113,16 +128,15 @@ export function parse(cells: Cell[]): ParseResult {
 
             const d = desc.toLowerCase();
             const t = type.toUpperCase();
-            const hasFrom = /\bfrom\b/.test(d);
+            const hasFrom = /\bfrom\b/.test(d) || d.includes('money added from');
 
             let moneyIn = '', moneyOut = '';
 
-            if (hasFrom) {
+            // IN_CODES (MOA/MOR/EXI) and "from" descriptions → always money in
+            if (IN_CODES.has(t) || hasFrom) {
                 const amt = (inAmt !== null && inAmt > 0) ? inAmt : outAmt;
                 if (amt === null || amt <= 0) continue;
                 moneyIn = formatMoney(amt);
-            } else if (t === 'MOA' && outAmt !== null && outAmt > 0 && (inAmt === null || inAmt === 0)) {
-                moneyIn = formatMoney(outAmt);
             } else if (outAmt !== null && outAmt > 0 && (inAmt === null || inAmt === 0)) {
                 moneyOut = formatMoney(outAmt);
             } else if (inAmt !== null && inAmt > 0 && (outAmt === null || outAmt === 0)) {
@@ -170,17 +184,26 @@ export function parse(cells: Cell[]): ParseResult {
 
             let moneyIn = '', moneyOut = '';
 
-            if (/\bfrom\b/.test(d)) {
+            if (/\bfrom\b/.test(d) || d.includes('money added from')) {
                 moneyIn = amt;
             } else if (nextBalNum === null) {
-                if (t === 'MOA') moneyIn = amt;
-                else moneyOut = amt;
+                // Last row or next row has no balance — use code legend
+                const dir = directionByCode(t);
+                if (dir === 'IN') moneyIn = amt;
+                else moneyOut = amt;  // OUT or unknown → default OUT
             } else {
                 const delta = balNum - nextBalNum;
-                if (Math.abs(delta) < 0.000001) continue;
-                if (Math.abs(Math.abs(delta) - absAmt) > 0.01) continue;
-                if (delta > 0) moneyIn = amt;
-                else moneyOut = amt;
+
+                if (Math.abs(delta) < 0.000001 || Math.abs(Math.abs(delta) - absAmt) > 0.01) {
+                    // Delta doesn't validate — fall back to code legend
+                    const dir = directionByCode(t);
+                    if (dir === 'IN') moneyIn = amt;
+                    else if (dir === 'OUT') moneyOut = amt;
+                    else continue;  // unknown code and no delta — skip
+                } else {
+                    if (delta > 0) moneyIn = amt;
+                    else moneyOut = amt;
+                }
             }
 
             if (!moneyIn && !moneyOut) continue;
