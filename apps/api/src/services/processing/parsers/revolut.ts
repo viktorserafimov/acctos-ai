@@ -54,6 +54,15 @@ function extractTwoAmounts(s: string): [number, number] | null {
     return [a, b];
 }
 
+// Parse amount, falling back to the first £-prefixed decimal when the cell also
+// contains a foreign-currency amount, e.g. "£30.67 1 574.00 TRY" → 30.67
+function parseMoneyFirst(s: string): number | null {
+    const direct = parseMoney(s);
+    if (direct !== null) return direct;
+    const m = normStr(s).match(/£\s*(\d+(?:\.\d{1,2})?)/);
+    return m ? parseMoney('£' + m[1]) : null;
+}
+
 export function parse(cells: Cell[]): ParseResult {
     const grid = buildGrid(cells);
     const rows = maxRow(cells);
@@ -111,6 +120,9 @@ export function parse(cells: Cell[]): ParseResult {
     }
 
     // ── 6-col and legacy 5-col ────────────────────────────────────────────────
+    // Layout is detected per-row because multi-page documents can mix both
+    // (e.g. pages where Azure DI emits 6 cols alternate with pages that only
+    //  produce 5 cols).  If c[5] parses as a balance → 6-col; otherwise → legacy 5-col.
     for (let i = startAt; i < table.length; i++) {
         const c = table[i].cols;
         const date = parseDateToDDMMYYYY(c[0]);
@@ -119,12 +131,15 @@ export function parse(cells: Cell[]): ParseResult {
         const type = normStr(c[1]);
         const desc = normStr(c[2]);
 
+        const c5bal = parseMoney(c[5] ?? '');
+        const rowIsSixCols  = isSixCols  && c5bal !== null;
+        const rowIsFiveCols = isFiveCols || (isSixCols && c5bal === null);
+
         // ── 6-col: [date, type, desc, out, in, balance] ──────────────────────
-        if (isSixCols) {
-            const outAmt = parseMoney(c[3]);
-            const inAmt  = parseMoney(c[4]);
-            const balNum = parseMoney(c[5]);
-            const bal    = balNum !== null ? formatMoney(balNum) : '';
+        if (rowIsSixCols) {
+            const outAmt = parseMoneyFirst(c[3]);
+            const inAmt  = parseMoneyFirst(c[4]);
+            const bal    = formatMoney(c5bal!);
 
             const d = desc.toLowerCase();
             const t = type.toUpperCase();
@@ -153,7 +168,7 @@ export function parse(cells: Cell[]): ParseResult {
         }
 
         // ── Legacy 5-col: [date, type, desc, amount, balance] ────────────────
-        if (isFiveCols) {
+        if (rowIsFiveCols) {
             let amountNum = parseMoney(c[3]);
             let balNum    = parseMoney(c[4]);
 
@@ -171,14 +186,19 @@ export function parse(cells: Cell[]): ParseResult {
             const d   = desc.toLowerCase();
             const t   = type.toUpperCase();
 
-            // Next table entry for balance delta direction detection
+            // Next table entry for balance delta direction detection.
+            // Only use it if the next row is also legacy 5-col (c5 absent) —
+            // otherwise a 6-col row's c[4] would be misread as a balance.
             const nextRow = table[i + 1];
             let nextBalNum: number | null = null;
             if (nextRow) {
-                nextBalNum = parseMoney(nextRow.cols[4]);
-                if (nextBalNum === null) {
-                    const pair = extractTwoAmounts(normStr(nextRow.cols[3]));
-                    if (pair) nextBalNum = pair[1];
+                const nextC5 = parseMoney(nextRow.cols[5] ?? '');
+                if (nextC5 === null) {
+                    nextBalNum = parseMoney(nextRow.cols[4]);
+                    if (nextBalNum === null) {
+                        const pair = extractTwoAmounts(normStr(nextRow.cols[3]));
+                        if (pair) nextBalNum = pair[1];
+                    }
                 }
             }
 
