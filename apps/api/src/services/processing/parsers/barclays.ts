@@ -18,6 +18,9 @@ const SKIP_RE          = /\b(start\s+balance|opening\s+balance|balance\s+brought
 const CARRIED_FWD_RE   = /\b(balance\s+carried\s+forward|carried\s+forward)\b/i;
 const TOTAL_RE         = /\b(total\s+payments[\/\\]receipts|total\s+payments|end\s+balance)\b/i;
 const NEW_TXN_RE       = /^(card\s+purchase|card\s+payment|internet\s+banking\s+transfer|on-line\s+banking\s+bill\s+payment|giro\s+direct\s+credit|direct\s+credit|atm\s+cash\s+machine|cash\s+machine\s+withdrawal|direct\s+debit|standing\s+order|refund\s+from|transfer\s+from|asd\s+withdrawal)\b/i;
+// Reasonable upper bound for a single transaction on a personal/SME account.
+// Amounts above this are almost certainly OCR garbage (footnotes, phone numbers, etc.)
+const MAX_SANE_AMOUNT  = 1_000_000;
 
 // ── Shared helpers ───────────────────────────────────────────────────────────
 
@@ -26,6 +29,38 @@ function fixOCR(s: string): string {
         .replace(/\b(\d{1,2})\s+un\b\s*»?\)?/gi, '$1 Jun')
         .replace(/\b(\d{1,2})\s+Ju[nm]\b\s*»?\)?/gi, '$1 Jun')
         .replace(/^\s*»\)?\s*/gm, '');
+}
+
+// Azure DI marks PDF checkboxes as :selected: / :unselected:
+function cleanSelected(s: string): string {
+    return s.replace(/:(un)?selected:/gi, ' ').replace(/\s+/g, ' ').trim();
+}
+
+// Extract column mapping from a header row (shared by initial detection and mid-data re-detection)
+function extractColMap(hdr: string[]): { date: number; desc: number; out: number; in: number; bal: number } | null {
+    const joined = hdr.join(' ').toLowerCase();
+    if (!joined.includes('description') && !joined.includes('date')) return null;
+    if (!joined.includes('money out') && !joined.includes('debit') && !joined.includes('balance')) return null;
+
+    let COL = { date: 0, desc: 1, out: 2, in: 3, bal: 4 };
+    for (let c = 0; c < hdr.length; c++) {
+        const v = hdr[c].toLowerCase();
+        if (v.includes('date') && !v.includes('description'))       COL.date = c;
+        else if (v.includes('description') && !v.includes('money'))  COL.desc = c;
+        else if (v.includes('money out') || v.includes('debit'))     COL.out  = c;
+        else if (v.includes('balance')) {
+            COL.bal = c;
+            if (v.includes('money in') || v === 'in balance') COL.in = c + 1;
+        }
+        else if (v.includes('money in') || v.includes('credit'))     COL.in   = c;
+    }
+    for (let c = 0; c < hdr.length; c++) {
+        const v = hdr[c].toLowerCase();
+        if (v.includes('description') && v.includes('money out')) { COL.desc = c; COL.out = c; }
+    }
+    if (!hdr.some(h => h.toLowerCase().includes('date'))) COL.date = 0;
+    if (COL.out === COL.in) COL.out = -1;
+    return COL;
 }
 
 function fmtDate(d: number, m: number, y: number): string {
@@ -287,38 +322,13 @@ function parseNormal(cells: Cell[]): ParseResult {
     });
     if (!table.length) return { transactions: [] };
 
-    // ── Column detection ──────────────────────────────────────────────────────
+    // ── Initial column detection (first header row) ───────────────────────────
     let startAt = 0;
     let COL = { date: 0, desc: 1, out: 2, in: 3, bal: 4 };
 
     for (let i = 0; i < table.length; i++) {
-        const joined = table[i].join(' ').toLowerCase();
-        if (!joined.includes('description') && !joined.includes('date')) continue;
-        if (!joined.includes('money out') && !joined.includes('debit') && !joined.includes('balance')) continue;
-
-        startAt = i + 1;
-        const hdr = table[i];
-
-        for (let c = 0; c < hdr.length; c++) {
-            const v = hdr[c].toLowerCase();
-            if (v.includes('date') && !v.includes('description'))      COL.date = c;
-            else if (v.includes('description') && !v.includes('money')) COL.desc = c;
-            else if (v.includes('money out') || v.includes('debit'))    COL.out  = c;
-            else if (v.includes('balance')) {
-                COL.bal = c;
-                if (v.includes('money in') || v === 'in balance') COL.in = c + 1;
-            }
-            else if (v.includes('money in') || v.includes('credit'))    COL.in   = c;
-        }
-        // Merged "Description Money out" cell
-        for (let c = 0; c < hdr.length; c++) {
-            const v = hdr[c].toLowerCase();
-            if (v.includes('description') && v.includes('money out')) { COL.desc = c; COL.out = c; }
-        }
-        // No "date" column → date is col 0
-        if (!hdr.some(h => h.toLowerCase().includes('date'))) COL.date = 0;
-        if (COL.out === COL.in) COL.out = -1;
-        break;
+        const mapped = extractColMap(table[i]);
+        if (mapped) { COL = mapped; startAt = i + 1; break; }
     }
 
     const gv = (row: string[], idx: number) => idx >= 0 && idx < row.length ? row[idx] : '';
@@ -330,12 +340,21 @@ function parseNormal(cells: Cell[]): ParseResult {
     let initialBalance: number | null = null;
 
     for (let i = startAt; i < table.length; i++) {
-        const row      = table[i];
+        const row = table[i];
+
+        // Re-detect column mapping when a page header row appears mid-data
+        // (happens when the whole encrypted PDF is sent as one chunk to Azure DI)
+        const remapped = extractColMap(row);
+        if (remapped) { COL = remapped; continue; }
+
         const moneyIn  = COL.in  >= 0 ? parseMoney(gv(row, COL.in))  : null;
         const moneyOut = COL.out >= 0 ? parseMoney(gv(row, COL.out)) : null;
         const balance  = parseMoney(gv(row, COL.bal));
         const dateCell = gv(row, COL.date);
         const movement = (moneyIn ?? 0) > 0 || (moneyOut ?? 0) > 0;
+
+        // Skip rows with unreasonably large amounts (footnotes, phone numbers, etc.)
+        if ((moneyIn ?? 0) > MAX_SANE_AMOUNT || (moneyOut ?? 0) > MAX_SANE_AMOUNT) continue;
 
         let parsedDate = parseBarcDate(dateCell, resolveYear);
 
@@ -355,7 +374,8 @@ function parseNormal(cells: Cell[]): ParseResult {
             }
             if (!isMoneyCol) descParts.push(row[c]);
         }
-        let desc = descParts.filter(Boolean).join(' ').trim();
+        // Strip checkbox OCR artefacts (:selected: / :unselected:)
+        let desc = cleanSelected(descParts.filter(Boolean).join(' ').trim());
 
         // Leading date embedded in description
         if (!parsedDate && desc) {

@@ -25,37 +25,53 @@ async function main() {
     console.log(`\nPDF: ${path.basename(pdfPath)}`);
 
     // ── Azure DI (with cache) ──────────────────────────────────────────────
-    let pageCells: Cell[][];
+    interface CacheEntry { cells: Cell[]; content: string; }
+    let pageData: CacheEntry[];
 
     if (existsSync(cachePath)) {
         console.log('Using cached Azure DI results…');
-        pageCells = JSON.parse(readFileSync(cachePath, 'utf-8'));
+        const raw = JSON.parse(readFileSync(cachePath, 'utf-8'));
+        // Support old format (Cell[][]) and new format (CacheEntry[])
+        if (Array.isArray(raw[0]) || raw.length === 0) {
+            pageData = (raw as Cell[][]).map(cells => ({ cells, content: '' }));
+        } else {
+            pageData = raw as CacheEntry[];
+        }
     } else {
         console.log('Splitting PDF into pages…');
         const pages = await splitPdf(readFileSync(pdfPath));
         console.log(`${pages.length} page(s) — calling Azure DI…`);
-        pageCells = [];
+        pageData = [];
         for (let i = 0; i < pages.length; i++) {
             process.stdout.write(`  Page ${i + 1}/${pages.length}… `);
             const data = await analyzePage(pages[i]);
-            pageCells.push(data.cells);
-            console.log(`${data.cells.length} cells`);
+            pageData.push({ cells: data.cells, content: data.content });
+            console.log(`${data.cells.length} cells, ${data.content.length} chars content`);
         }
-        writeFileSync(cachePath, JSON.stringify(pageCells));
+        writeFileSync(cachePath, JSON.stringify(pageData));
         console.log('Cache saved.');
     }
 
     // ── Merge pages (offset rows + inject combined content as context cell) ──
-    const combinedContent = pageCells.flat().map(c => c.content).join(' ');
+    const combinedContent = pageData.map(p => p.content).filter(Boolean).join(' ')
+        || pageData.flatMap(p => p.cells).map(c => c.content).join(' ');
     const combined: Cell[] = [{ rowIndex: -1, columnIndex: -1, content: combinedContent }];
     let rowOffset = 0;
-    for (const cells of pageCells) {
+    for (const { cells } of pageData) {
         let pageMax = -1;
         for (const c of cells) {
             combined.push({ ...c, rowIndex: c.rowIndex + rowOffset });
             if (c.rowIndex > pageMax) pageMax = c.rowIndex;
         }
         if (pageMax >= 0) rowOffset += pageMax + 10000;
+    }
+
+    // ── Diagnostic: show raw content if no cells found ────────────────────
+    const totalCells = pageData.reduce((s, p) => s + p.cells.length, 0);
+    if (totalCells === 0 && combinedContent) {
+        console.log('\n── Raw content (first 2000 chars) ──');
+        console.log(combinedContent.slice(0, 2000));
+        console.log('──');
     }
 
     // Detect variant
