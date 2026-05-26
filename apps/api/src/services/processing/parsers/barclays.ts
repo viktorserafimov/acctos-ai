@@ -32,20 +32,48 @@ function fixOCR(s: string): string {
 }
 
 // Azure DI marks PDF checkboxes as :selected: / :unselected:
-// Also strip leading OCR artefacts from Barclays icon glyphs: = 1) ))
+// Also strip leading OCR noise before known Barclays transaction keywords.
+// Uses a lookahead so we only strip artefacts that precede a recognisable transaction type,
+// which avoids accidentally truncating merchant names (e.g. "B & Q", "7-Eleven").
 function cleanSelected(s: string): string {
     return s
         .replace(/:(un)?selected:/gi, ' ')
-        .replace(/^\s*([=]|\d+\)|[)]{2,})\s+/, '')
+        .replace(
+            /^\s*(?:[=[\]()%]+\s*|\d{1,3}\s+|[A-Z]\s+|£\s+)(?=(?:card|dd|direct|giro|atm|internet|on[- ]line|bill|commission|interest|cash|transfer|standing|refund|asd|visa|unpaid|businesscall)\b)/i,
+            '',
+        )
         .replace(/\s+/g, ' ')
         .trim();
 }
 
-// Find the earliest year that appears in a proper date context ("6 Dec 2025"),
-// ignoring bare 4-digit years that may appear in company/account names.
-// Uses minimum so that a statement period "06 Dec 2025 - 05 Jan 2026" returns 2025,
-// not 2026 from the "Issued on 06 January 2026" line that often precedes it.
+// Find the start year for the statement, ignoring bare 4-digit years in company/account names.
+// Priority order:
+//   1. Full range "DD Mon YYYY - DD Mon YYYY" → first year
+//   2. Abbreviated range "DD Mon - DD Mon YYYY" (Barclays "at a glance" summary)
+//      → derive start year from end year, adjusting back 1 if start month > end month (Dec→Jan)
+//   3. Fallback: minimum year in any proper date context
+// Commission-charge descriptions like "15 Dec 2025/12 Jan 2026" use "/" not "-" so they
+// never match patterns 1 or 2 and don't poison the fallback minimum.
 function extractStartYearFromContent(content: string): number | null {
+    // 1. Full range
+    const fullRe = /\b(\d{1,2})\s+(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\w*\s+(\d{4})\s*[-–]\s*\d{1,2}\s+(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\w*\s+\d{4}\b/gi;
+    const fm = fullRe.exec(content);
+    if (fm) {
+        const y = Number(fm[3]);
+        if (y >= 2020 && y <= 2099) return y;
+    }
+    // 2. Abbreviated range (e.g. "31 Jan - 27 Feb 2026")
+    const abbRe = /\b(\d{1,2})\s+(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\w*\s*[-–]\s*\d{1,2}\s+(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\w*\s+(\d{4})\b/gi;
+    const am = abbRe.exec(content);
+    if (am) {
+        const startMon = MONTH_MAP[am[2].slice(0, 3).toLowerCase()];
+        const endMon   = MONTH_MAP[am[3].slice(0, 3).toLowerCase()];
+        const endYear  = Number(am[4]);
+        if (startMon && endMon && endYear >= 2020 && endYear <= 2099) {
+            return startMon > endMon ? endYear - 1 : endYear;
+        }
+    }
+    // 3. Minimum year in any proper date context
     const re = /\b\d{1,2}\s+(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\w*\s+(\d{4})\b/gi;
     let min: number | null = null;
     let m: RegExpExecArray | null;
@@ -410,7 +438,7 @@ function parseNormal(cells: Cell[]): ParseResult {
         // Active posting-date group: rows without a date inherit the last seen date
         if (parsedDate) {
             activePostingDate = parsedDate;
-        } else if (!dateCell && activePostingDate) {
+        } else if (activePostingDate) {
             parsedDate = activePostingDate;
         }
 
