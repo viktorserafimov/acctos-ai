@@ -40,6 +40,7 @@ function getParser(bankType: BankType): StandardParser {
         case 'wise':       return parseWise;
         case 'starling':   return parseStarling;
         case 'natwest':    return parseNatwest;
+        case 'rbs':        return parseNatwest;
         case 'nationwide': return parseNationwide;
         case 'santander':  return parseSantander;
         case 'barclays':   return parseBarclays;
