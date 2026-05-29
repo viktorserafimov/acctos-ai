@@ -143,7 +143,16 @@ export function parse(cells: Cell[]): ParseResult {
         /paid\s*out/.test(h[3] ?? '')
     );
 
-    const is4Col = !is5Col && !is4ColCombined && (
+    // col2 header has BOTH "type" AND "paid in" merged (e.g. "Type Paid in (£)")
+    // col3 header is "paid out" — amounts are negative strings like "-£50.00"
+    const is4ColTypePaidIn = !is5Col && !is4ColCombined && (
+        /\bdate\b/.test(h[0] ?? '') &&
+        /description|transaction/.test(h[1] ?? '') &&
+        /\btype\b/.test(h[2] ?? '') && /paid\s*in/.test(h[2] ?? '') &&
+        /paid\s*out/.test(h[3] ?? '')
+    );
+
+    const is4Col = !is5Col && !is4ColCombined && !is4ColTypePaidIn && (
         /\bdate\b/.test(h[0] ?? '') &&
         /description|transaction/.test(h[1] ?? '') &&
         /paid\s*in|withdrawn|amount|debit|credit/.test(h[2] ?? '') &&
@@ -172,6 +181,34 @@ export function parse(cells: Cell[]): ParseResult {
 
         const desc = normStr(c[1]);
         if (!desc || isBroughtForward(desc)) continue;
+
+        // ── Format 4: "Type Paid in (£) | Paid out (£)" ────────────────────
+        // Azure DI collapses the empty "Paid in" cell for debits, so the paid-out
+        // amount lands at col3 with a negative sign (e.g. "-£50.00").
+        // For credits, col3 is the positive paid-in amount (e.g. "£1,710.60").
+        // Sign of col3 therefore determines direction.
+        if (is4ColTypePaidIn) {
+            const rawCol2 = normStr(c[2]);
+            const rawCol3 = normStr(c[3]);
+
+            // col2 is a type label when parseMoney yields 0/null
+            const col2Amt = parseMoney(rawCol2);
+            const isMoneyCol2 = col2Amt !== null && col2Amt !== 0;
+            const type = isMoneyCol2 ? '' : rawCol2;
+
+            const col3Amt = parseMoney(rawCol3);
+            let moneyIn  = isMoneyCol2 ? formatMoney(Math.abs(col2Amt!)) : '';
+            let moneyOut = '';
+
+            if (col3Amt !== null && col3Amt !== 0) {
+                if (col3Amt > 0) moneyIn  = formatMoney(col3Amt);
+                else             moneyOut = formatMoney(Math.abs(col3Amt));
+            }
+
+            if (!moneyIn && !moneyOut) continue;
+            transactions.push({ date: lastDate, type, description: desc, moneyIn, moneyOut, balance: '' });
+            continue;
+        }
 
         // ── Format 1: 5-col [date, desc, type, paidIn, paidOut] ─────────────
         if (is5Col) {
