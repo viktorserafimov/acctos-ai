@@ -5,7 +5,10 @@
       "Bash(grep -E \"\\\\.\\(tsx?|jsx?\\)$\")",
       "Bash(xargs grep *)",
       "Bash(Get-ChildItem -Path \"d:\\\\Shiz\\\\Acctos AI\" -Recurse -Directory -Name)",
-      "Bash(Select-Object -First 30)"
+      "Bash(Select-Object -First 30)",
+      "Bash(Get-ChildItem -Path \"d:\\\\Shiz\\\\Acctos AI\" -Force)",
+      "Bash(Select-Object Name, PSIsContainer)",
+      "Bash(git log *)"
     ]
   }
 }
