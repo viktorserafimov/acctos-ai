@@ -1,4 +1,5 @@
 import * as XLSX from 'xlsx';
+import JSZip from 'jszip';
 import { readFileSync, writeFileSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
@@ -34,7 +35,7 @@ function toNum(v: unknown): number | null {
     return isFinite(n) && n !== 0 ? n : null;
 }
 
-export function buildPdfOutputExcel(transactions: CategorizedTransaction[]): Buffer {
+export async function buildPdfOutputExcel(transactions: CategorizedTransaction[]): Promise<Buffer> {
     const templateBuf = readFileSync(TEMPLATE_PATH);
     const wb = XLSX.read(templateBuf, { cellStyles: true, sheetStubs: true });
     const ws = wb.Sheets[wb.SheetNames[0]];
@@ -53,10 +54,11 @@ export function buildPdfOutputExcel(transactions: CategorizedTransaction[]): Buf
         if (z) colFmts[c] = z;
     }
 
-    // Clear all data rows (row index ≥ 2 = Excel row 3+)
+    // Clear all data rows (row index ≥ 2 = Excel row 3+), preserving column D (yellow fill from template)
     const existingRef = XLSX.utils.decode_range(ws['!ref'] ?? 'A1:Q2');
     for (let r = 2; r <= existingRef.e.r; r++) {
         for (let c = 0; c <= Math.max(existingRef.e.c, 16); c++) {
+            if (c === 3) continue; // preserve column D yellow fill
             const addr = XLSX.utils.encode_cell({ r, c });
             if (ws[addr]) delete ws[addr];
         }
@@ -98,7 +100,73 @@ export function buildPdfOutputExcel(transactions: CategorizedTransaction[]): Buf
     const lastRow = Math.max(1, transactions.length + 1);
     ws['!ref'] = XLSX.utils.encode_range({ s: { r: 0, c: 0 }, e: { r: lastRow, c: 16 } });
 
-    return Buffer.from(XLSX.write(wb, { type: 'buffer', bookType: 'xlsx', cellStyles: true }));
+    const xlsxBuf = Buffer.from(XLSX.write(wb, { type: 'buffer', bookType: 'xlsx', cellStyles: true }));
+
+    // xlsx package cannot write freeze panes or cell fills — inject via JSZip XML patch
+    return injectXlsxFormatting(xlsxBuf, 2);
+}
+
+/** Post-process an xlsx buffer via JSZip to:
+ *  1. Freeze the top `freezeRows` rows (xlsx 0.18.x cannot write sheetViews)
+ *  2. Apply yellow fill to every data row in column D (xlsx drops cell styles on write)
+ */
+async function injectXlsxFormatting(buf: Buffer, freezeRows: number): Promise<Buffer> {
+    const zip = await JSZip.loadAsync(buf);
+
+    // ── styles.xml: add yellow fill + a cell xf referencing it ─────────────
+    const stylesFile = zip.file('xl/styles.xml');
+    if (stylesFile) {
+        let sx = await stylesFile.async('string');
+
+        // Append yellow fill and bump fills count
+        sx = sx.replace(/<fills count="(\d+)">/, (_, n) => `<fills count="${+n + 1}">`);
+        sx = sx.replace('</fills>',
+            '<fill><patternFill patternType="solid">' +
+            '<fgColor rgb="FFFFFF00"/><bgColor rgb="FFFFFF00"/>' +
+            '</patternFill></fill></fills>');
+
+        // yellow fill is now at fillId = (original fills count)  = 2 in a fresh output
+        // Determine new xf index (= current count) before bumping
+        const xfCountMatch = sx.match(/<cellXfs count="(\d+)"/);
+        const yellowXfIdx = xfCountMatch ? +xfCountMatch[1] : 3;
+
+        sx = sx.replace(/<cellXfs count="(\d+)"/, (_, n) => `<cellXfs count="${+n + 1}"`);
+        sx = sx.replace('</cellXfs>',
+            '<xf numFmtId="0" fontId="0" fillId="2" borderId="0" xfId="0" applyFill="1"/></cellXfs>');
+
+        zip.file('xl/styles.xml', sx);
+
+        // ── sheet1.xml: freeze panes + yellow D cells ───────────────────────
+        const sheetFile = zip.file('xl/worksheets/sheet1.xml');
+        if (sheetFile) {
+            let xml = await sheetFile.async('string');
+
+            // Freeze panes: replace self-closing <sheetView .../> with one containing <pane>
+            const freezeInner =
+                `<pane ySplit="${freezeRows}" topLeftCell="A${freezeRows + 1}" ` +
+                `activePane="bottomLeft" state="frozen"/>` +
+                `<selection pane="bottomLeft" activeCell="A${freezeRows + 1}" sqref="A${freezeRows + 1}"/>`;
+
+            xml = xml.replace(
+                /<sheetView([^>]*)\/>/,
+                `<sheetView$1>${freezeInner}</sheetView>`,
+            );
+
+            // Yellow column D: add <c r="DN" s="{idx}"/> to every data row (row > freezeRows)
+            xml = xml.replace(
+                /<row r="(\d+)"([^>]*)>([\s\S]*?)<\/row>/g,
+                (match, rowNum, attrs, content) => {
+                    if (+rowNum <= freezeRows) return match;
+                    if (content.includes(`r="D${rowNum}"`)) return match;
+                    return `<row r="${rowNum}"${attrs}>${content}<c r="D${rowNum}" s="${yellowXfIdx}"/></row>`;
+                },
+            );
+
+            zip.file('xl/worksheets/sheet1.xml', xml);
+        }
+    }
+
+    return zip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' });
 }
 
 export function buildExcelOutputExcel(transactions: ExcelTransaction[]): Buffer {
