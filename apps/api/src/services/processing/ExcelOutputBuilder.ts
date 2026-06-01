@@ -17,83 +17,56 @@ const CAT_COLS: (keyof CategorizedTransaction)[] = [
 ];
 
 const YELLOW_FILL: ExcelJS.Fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFFF00' } };
-const GRAY_FILL:   ExcelJS.Fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFD9D9D9' } };
-const BLUE_FILL:   ExcelJS.Fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFDDEBF7' } };
-const GREEN_FILL:  ExcelJS.Fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFC6EFCE' } };
-const ORANGE_FILL: ExcelJS.Fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFEB9C' } };
 const MONEY_FMT = '#,##0.00';
-const TOTAL_COLS = 17;
 
-function addVerificationRows(ws: ExcelJS.Worksheet, startRow: number, v: VerificationSummary): void {
-    let r = startRow;
+// Verification summary goes to the right of the main table (cols 19-20),
+// starting at row 3, so transactions are never interrupted.
+const VER_LABEL_COL = 19;
+const VER_VALUE_COL = 20;
 
-    const fillRow = (row: ExcelJS.Row, fill: ExcelJS.Fill) => {
-        for (let c = 1; c <= TOTAL_COLS; c++) row.getCell(c).fill = fill;
-        row.getCell(4).fill = YELLOW_FILL;
-    };
+function addVerificationSide(ws: ExcelJS.Worksheet, v: VerificationSummary): void {
+    let r = 3;
 
-    const dataRow = (label: string, inVal?: number | null, outVal?: number | null) => {
+    const write = (label: string, value?: number | string | null, bold = false) => {
         const row = ws.getRow(r++);
-        row.getCell(4).fill = YELLOW_FILL;
-        row.getCell(2).value = label;
-        if (inVal != null) {
-            const cell = row.getCell(3);
-            cell.value = inVal;
-            cell.numFmt = MONEY_FMT;
-        }
-        if (outVal != null) {
-            const cell = row.getCell(TOTAL_COLS);
-            cell.value = outVal;
-            cell.numFmt = MONEY_FMT;
+        const lc = row.getCell(VER_LABEL_COL);
+        lc.value = label;
+        if (bold) lc.font = { bold: true };
+        if (value != null) {
+            const vc = row.getCell(VER_VALUE_COL);
+            if (typeof value === 'number') {
+                vc.value = value;
+                vc.numFmt = MONEY_FMT;
+            } else {
+                vc.value = value;
+                if (bold) vc.font = { bold: true };
+            }
         }
         row.commit();
     };
 
-    const statusRow = (label: string, ok: boolean) => {
-        const row = ws.getRow(r++);
-        fillRow(row, ok ? GREEN_FILL : ORANGE_FILL);
-        const cell = row.getCell(2);
-        cell.value = label;
-        cell.font = { bold: true };
-        row.commit();
-    };
+    write('VERIFICATION SUMMARY', null, true);
+    write('');
+    if (v.openingBalance != null) write('Opening balance', v.openingBalance);
+    write('Total money in',  v.totalIn);
+    write('Total money out', v.totalOut);
+    if (v.closingBalance != null) write('Closing balance', v.closingBalance);
+    write('');
 
-    // Separator + title
-    const sep = ws.getRow(r++);
-    fillRow(sep, GRAY_FILL);
-    sep.commit();
-
-    const title = ws.getRow(r++);
-    fillRow(title, BLUE_FILL);
-    const tc = title.getCell(2);
-    tc.value = 'VERIFICATION SUMMARY';
-    tc.font = { bold: true };
-    title.commit();
-
-    // Balance section
-    if (v.openingBalance != null) dataRow('Opening balance', null, v.openingBalance);
-    dataRow('Total money in',  v.totalIn);
-    dataRow('Total money out', null, v.totalOut);
-    if (v.closingBalance != null) dataRow('Closing balance', null, v.closingBalance);
-
-    const balLabel = v.balanceOk
+    const balStatus = v.balanceOk
         ? '✓ Balance check OK'
-        : `⚠ Balance mismatch — diff: ${v.balanceDiff != null ? (v.balanceDiff >= 0 ? '+' : '') + v.balanceDiff.toFixed(2) : 'unknown'}`;
-    statusRow(balLabel, v.balanceOk);
+        : `⚠ Mismatch — diff: ${v.balanceDiff != null ? (v.balanceDiff >= 0 ? '+' : '') + v.balanceDiff.toFixed(2) : 'unknown'}`;
+    write(balStatus, null, true);
 
-    // Declared totals section (Pockit)
     if (v.declaredIn != null && v.declaredOut != null) {
-        const sep2 = ws.getRow(r++);
-        sep2.getCell(4).fill = YELLOW_FILL;
-        sep2.commit();
-
-        dataRow('Declared in (by bank)',  v.declaredIn);
-        dataRow('Declared out (by bank)', null, v.declaredOut);
-
-        const declLabel = v.declaredOk
+        write('');
+        write('Declared in (by bank)',  v.declaredIn);
+        write('Declared out (by bank)', v.declaredOut);
+        write('');
+        const declStatus = v.declaredOk
             ? '✓ Declared totals match'
-            : `⚠ Declared totals mismatch — In diff: ${(v.totalIn - v.declaredIn).toFixed(2)}, Out diff: ${(v.totalOut - v.declaredOut).toFixed(2)}`;
-        statusRow(declLabel, v.declaredOk ?? false);
+            : `⚠ In diff: ${(v.totalIn - v.declaredIn).toFixed(2)}, Out diff: ${(v.totalOut - v.declaredOut).toFixed(2)}`;
+        write(declStatus, null, true);
     }
 }
 
@@ -177,21 +150,17 @@ export async function buildPdfOutputExcel(transactions: CategorizedTransaction[]
         row.commit();
     });
 
-    // Append verification summary if provided
-    const lastDataRow = transactions.length + 2;
-    if (verification) {
-        addVerificationRows(ws, lastDataRow + 1, verification);
-    }
-
     // Fill column D yellow for all remaining rows up to 1000
-    const summaryRowCount = verification
-        ? 7 + (verification.declaredIn != null ? 4 : 0)
-        : 0;
-    const fillStart = lastDataRow + 1 + summaryRowCount;
-    for (let r = fillStart; r <= 1000; r++) {
+    const lastDataRow = transactions.length + 2;
+    for (let r = lastDataRow + 1; r <= 1000; r++) {
         const row = ws.getRow(r);
         row.getCell(4).fill = YELLOW_FILL;
         row.commit();
+    }
+
+    // Verification summary: placed to the right of the table (cols 19-20), no background colours
+    if (verification) {
+        addVerificationSide(ws, verification);
     }
 
     // Freeze first 2 rows
