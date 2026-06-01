@@ -120,6 +120,7 @@ export function parse(cells: Cell[]): ParseResult {
     for (let i = startAt; i < table.length; i++) {
         const c = table[i].cols;
         if (c.every(v => !normStr(v))) continue;  // blank row
+        if (isHeaderRow(c) && !headerContainsTransaction(c)) continue;  // repeated page header
 
         const parsedDate = parseDate(c[0]);
         if (parsedDate) lastDate = parsedDate;
