@@ -6,31 +6,8 @@ import { splitPdf } from './src/services/processing/PdfSplitter.js';
 import { analyzePages } from './src/services/processing/AzureExtractor.js';
 import { classify } from './src/services/processing/DocumentClassifier.js';
 import { parse as parseVirginMoney } from './src/services/processing/parsers/virginmoney.js';
-import { Cell, ParsedTransaction, parseMoney } from './src/services/processing/parsers/shared.js';
-
-function logTotalsVerification(transactions: ParsedTransaction[]): void {
-    if (!transactions.length) return;
-    const totalIn  = transactions.reduce((s, t) => s + (parseFloat(t.moneyIn  || '0') || 0), 0);
-    const totalOut = transactions.reduce((s, t) => s + (parseFloat(t.moneyOut || '0') || 0), 0);
-
-    // Virgin Money has no declared totals — use balance continuity check only.
-    // Transactions are newest-first. opening_balance = oldest.balance - oldest.moneyIn + oldest.moneyOut
-    const first = transactions[0];
-    const last  = transactions[transactions.length - 1];
-    const closingBal = parseMoney(first.balance);
-    const oldestBal  = parseMoney(last.balance);
-    if (closingBal !== null && oldestBal !== null) {
-        const lastIn  = parseMoney(last.moneyIn)  ?? 0;
-        const lastOut = parseMoney(last.moneyOut) ?? 0;
-        const openingBal      = oldestBal - lastIn + lastOut;
-        const expectedClosing = openingBal + totalIn - totalOut;
-        if (Math.abs(expectedClosing - closingBal) > 0.02) {
-            console.warn(`  [TotalsCheck] Balance gap — opening: ${openingBal.toFixed(2)} + in: ${totalIn.toFixed(2)} - out: ${totalOut.toFixed(2)} = ${expectedClosing.toFixed(2)}, actual closing: ${closingBal.toFixed(2)} (diff=${(closingBal - expectedClosing).toFixed(2)})`);
-        } else {
-            console.log(`  [TotalsCheck] Balance continuity OK — opening: ${openingBal.toFixed(2)}, closing: ${closingBal.toFixed(2)} ✓`);
-        }
-    }
-}
+import { Cell } from './src/services/processing/parsers/shared.js';
+import { computeVerification, logVerificationSummary } from './src/services/processing/Verification.js';
 import { categorize } from './src/services/processing/AssistantCategorizer.js';
 import { buildPdfOutputExcel } from './src/services/processing/ExcelOutputBuilder.js';
 
@@ -92,6 +69,8 @@ for (const p of pageData) {
 const { transactions } = parseVirginMoney(combined);
 console.log(`\nParsed ${transactions.length} transactions`);
 
+const verification = computeVerification(transactions);
+
 if (transactions.length > 0) {
     console.log('\nFirst 5:');
     transactions.slice(0, 5).forEach((t, i) =>
@@ -107,8 +86,10 @@ if (transactions.length > 0) {
     const totalOut = transactions.reduce((s, t) => s + (parseFloat(t.moneyOut || '0') || 0), 0);
     console.log(`\nTotals — Money In: ${totalIn.toFixed(2)}  Money Out: ${totalOut.toFixed(2)}`);
 
-    console.log('\nTotals verification:');
-    logTotalsVerification(transactions);
+    if (verification) {
+        console.log('\nTotals verification:');
+        logVerificationSummary(verification);
+    }
 }
 
 console.log('\nRunning categorization...');
@@ -117,7 +98,7 @@ console.log('\nFirst 5 categorized:');
 categorized.slice(0, 5).forEach((t, i) =>
     console.log(`  [${i+1}] ${t.DATE} | ${(t['Type and Description']||'').slice(0,40).padEnd(40)} | INCOME:${(t.INCOME||'').padStart(10)} OTHER:${(t.OTHER||'').padStart(10)} bal:${t.Balance}`)
 );
-const outputBuffer = await buildPdfOutputExcel(categorized);
+const outputBuffer = await buildPdfOutputExcel(categorized, verification);
 const outPath = filePath.replace(/\.pdf(\.\w+)?$/i, '') + '_processed.xlsx';
 writeFileSync(outPath, outputBuffer);
 console.log(`\nOutput saved: ${outPath}`);

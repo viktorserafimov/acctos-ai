@@ -7,42 +7,8 @@ import { splitPdf } from './src/services/processing/PdfSplitter.js';
 import { analyzePages } from './src/services/processing/AzureExtractor.js';
 import { classify } from './src/services/processing/DocumentClassifier.js';
 import { parse as parsePockit } from './src/services/processing/parsers/pockit.js';
-import { Cell, ParsedTransaction, parseMoney } from './src/services/processing/parsers/shared.js';
-
-function logTotalsVerification(
-    transactions: ParsedTransaction[],
-    declared?: { moneyIn: number; moneyOut: number },
-): void {
-    if (!transactions.length) return;
-    const totalIn  = transactions.reduce((s, t) => s + (parseFloat(t.moneyIn  || '0') || 0), 0);
-    const totalOut = transactions.reduce((s, t) => s + (parseFloat(t.moneyOut || '0') || 0), 0);
-
-    if (declared) {
-        const inDiff  = totalIn  - declared.moneyIn;
-        const outDiff = totalOut - declared.moneyOut;
-        if (Math.abs(inDiff) > 0.02 || Math.abs(outDiff) > 0.02) {
-            console.warn(`  [TotalsCheck] MISMATCH vs declared — In: computed=${totalIn.toFixed(2)} declared=${declared.moneyIn.toFixed(2)} (diff=${inDiff.toFixed(2)}), Out: computed=${totalOut.toFixed(2)} declared=${declared.moneyOut.toFixed(2)} (diff=${outDiff.toFixed(2)})`);
-        } else {
-            console.log(`  [TotalsCheck] Declared totals match — In: ${totalIn.toFixed(2)}, Out: ${totalOut.toFixed(2)} ✓`);
-        }
-    }
-
-    const first = transactions[0];
-    const last  = transactions[transactions.length - 1];
-    const closingBal = parseMoney(first.balance);
-    const oldestBal  = parseMoney(last.balance);
-    if (closingBal !== null && oldestBal !== null) {
-        const lastIn  = parseMoney(last.moneyIn)  ?? 0;
-        const lastOut = parseMoney(last.moneyOut) ?? 0;
-        const openingBal      = oldestBal - lastIn + lastOut;
-        const expectedClosing = openingBal + totalIn - totalOut;
-        if (Math.abs(expectedClosing - closingBal) > 0.02) {
-            console.warn(`  [TotalsCheck] Balance gap — opening: ${openingBal.toFixed(2)} + in: ${totalIn.toFixed(2)} - out: ${totalOut.toFixed(2)} = ${expectedClosing.toFixed(2)}, actual closing: ${closingBal.toFixed(2)} (diff=${(closingBal - expectedClosing).toFixed(2)})`);
-        } else {
-            console.log(`  [TotalsCheck] Balance continuity OK — opening: ${openingBal.toFixed(2)}, closing: ${closingBal.toFixed(2)} ✓`);
-        }
-    }
-}
+import { Cell, ParsedTransaction } from './src/services/processing/parsers/shared.js';
+import { computeVerification, logVerificationSummary } from './src/services/processing/Verification.js';
 import { categorize } from './src/services/processing/AssistantCategorizer.js';
 import { buildPdfOutputExcel } from './src/services/processing/ExcelOutputBuilder.js';
 
@@ -179,6 +145,7 @@ for (const filePath of filePaths) {
 console.log(`\n=== Combined: ${allTransactions.length} transactions from ${filePaths.length} file(s) ===`);
 
 const sorted = filePaths.length > 1 ? sortTransactions(allTransactions) : allTransactions;
+let verification = computeVerification(sorted, combinedStatementTotals);
 
 if (sorted.length > 0) {
     console.log('\nFirst 5:');
@@ -199,8 +166,10 @@ if (sorted.length > 0) {
         verifyBalances(sorted);
     }
 
-    console.log('\nTotals verification:');
-    logTotalsVerification(sorted, combinedStatementTotals);
+    if (verification) {
+        console.log('\nTotals verification:');
+        logVerificationSummary(verification);
+    }
 }
 
 console.log('\nRunning categorization...');
@@ -210,7 +179,7 @@ categorized.slice(0, 5).forEach((t, i) =>
     console.log(`  [${i+1}] ${t.DATE} | ${(t['Type and Description']||'').slice(0,40).padEnd(40)} | INCOME:${(t.INCOME||'').padStart(10)} OTHER:${(t.OTHER||'').padStart(10)} bal:${t.Balance}`)
 );
 
-const outputBuffer = await buildPdfOutputExcel(categorized);
+const outputBuffer = await buildPdfOutputExcel(categorized, verification);
 const outPath = filePaths[0].replace(/\.pdf(\.\w+)?$/i, '') + (filePaths.length > 1 ? `_+${filePaths.length - 1}more` : '') + '_processed.xlsx';
 writeFileSync(outPath, outputBuffer);
 console.log(`\nOutput saved: ${outPath}`);
