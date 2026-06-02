@@ -69,7 +69,7 @@ export function detectBankFromContent(text: string): BankType {
     if (/\bmonzo\b/.test(t))                                         return 'monzo';
     if (/wise\.com\/help/.test(t) || /\bref:\s*[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/i.test(t)) return 'wise';
     if (/\bstarling\b/.test(t))                                      return 'starling';
-    if (/\bmettle\b/.test(t))                                          return 'mettle';
+    if (/\bmettle\b/.test(t) || t.includes('the mettle bank account')) return 'mettle';
     if (/\b(natwest|nat west|national westminster)\b/.test(t))       return 'natwest';
     if (/\b(rbs|royal bank of scotland)\b/.test(t))                  return 'rbs';
     if (t.includes('internet-banking.ib.apps.virginmoney.com/vm/homepage')) return 'virginmoney';
