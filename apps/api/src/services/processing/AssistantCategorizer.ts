@@ -59,10 +59,17 @@ function deduplicateExpenseColumns(row: CategorizedTransaction): void {
 }
 
 function applyFallbackToRow(row: CategorizedTransaction, src: any): void {
+    const moneyOut = parseMoney(src['Money out']);
+    const moneyIn  = parseMoney(src['Money in']);
+
+    // Direction guard: an outgoing transaction must never appear as INCOME
+    if (moneyOut !== null && moneyOut > 0 && parseMoney(row.INCOME) !== null) {
+        if (!row.OTHER) row.OTHER = '-' + fmt(moneyOut);
+        row.INCOME = '';
+    }
+
     const filledCount = EXPENSE_CATS.filter(k => ((row as any)[k] || '').trim() !== '').length;
     if (filledCount === 0) {
-        const moneyOut = parseMoney(src['Money out']);
-        const moneyIn  = parseMoney(src['Money in']);
         if (moneyOut !== null && moneyOut > 0) (row as any).OTHER = '-' + fmt(moneyOut);
         else if (moneyIn !== null && moneyIn > 0) (row as any).INCOME = fmt(moneyIn);
     }
