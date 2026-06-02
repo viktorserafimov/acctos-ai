@@ -106,8 +106,6 @@ async function parseAllCells(pageCells: Array<Cell[] | null>, bankType: BankType
     }
 }
 
-/**
-
 // ── Multi-file batch helpers ─────────────────────────────────────────────────
 
 function parseTransactionDate(dateStr: string): number {
@@ -145,6 +143,12 @@ function sortTransactions(transactions: ParsedTransaction[]): ParsedTransaction[
  * Log balance continuity warnings after sorting.
  * In descending order: row[i].balance = row[i+1].balance + row[i].moneyIn - row[i].moneyOut
  */
+function parseMoney(s: string | undefined | null): number | null {
+    if (!s) return null;
+    const n = parseFloat(s.replace(/[^0-9.-]/g, ''));
+    return isFinite(n) ? n : null;
+}
+
 function verifyBalances(transactions: ParsedTransaction[]): void {
     for (let i = 0; i < transactions.length - 1; i++) {
         const cur  = transactions[i];
@@ -193,6 +197,7 @@ async function runBatchJob(jobId: string, files: FileInput[], tracking?: Trackin
 
         const allTransactions: ParsedTransaction[] = [];
         let confirmedBankType: BankType | null = null;
+        let combinedStatementTotals: { moneyIn: number; moneyOut: number } | undefined;
 
         for (let fi = 0; fi < files.length; fi++) {
             const { filename, mimeType, buffer } = files[fi];
@@ -276,8 +281,12 @@ async function runBatchJob(jobId: string, files: FileInput[], tracking?: Trackin
             }
 
             jobStore.update(jobId, { currentStage: 'parse' });
-            const fileTransactions = await parseAllCells(pageCells, bankType);
+            const { transactions: fileTransactions, statementTotals } = await parseAllCells(pageCells, bankType);
             console.log(`[Orchestrator] File ${fi + 1}/${files.length} "${filename}": ${fileTransactions.length} transactions`);
+            if (statementTotals) {
+                if (!combinedStatementTotals) combinedStatementTotals = { ...statementTotals };
+                else { combinedStatementTotals.moneyIn += statementTotals.moneyIn; combinedStatementTotals.moneyOut += statementTotals.moneyOut; }
+            }
             allTransactions.push(...fileTransactions);
         }
 
@@ -287,11 +296,14 @@ async function runBatchJob(jobId: string, files: FileInput[], tracking?: Trackin
         const sorted = files.length > 1 ? sortTransactions(allTransactions) : allTransactions;
         if (files.length > 1) verifyBalances(sorted);
 
+        const verification = computeVerification(sorted, combinedStatementTotals);
+        if (verification) logVerificationSummary(verification);
+
         jobStore.update(jobId, { currentStage: 'categorize', currentFile: undefined });
         const categorized = await categorize(sorted);
         jobStore.update(jobId, { transactionCount: categorized.length, currentStage: 'output' });
 
-        const outputBuffer = await buildPdfOutputExcel(categorized);
+        const outputBuffer = await buildPdfOutputExcel(categorized, verification);
         jobStore.update(jobId, { status: 'completed', outputBuffer, completedAt: new Date() });
         console.log(`[Orchestrator] Batch job ${jobId} completed — ${allTransactions.length} transactions from ${files.length} file(s)`);
 
