@@ -5,6 +5,7 @@ import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { CategorizedTransaction } from './AssistantCategorizer.js';
 import { ExcelTransaction } from './ExcelParser.js';
+import { VerificationSummary } from './Verification.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const TEMPLATE_PATH = join(__dirname, 'template-bank-statement.xlsx');
@@ -15,11 +16,59 @@ const CAT_COLS: (keyof CategorizedTransaction)[] = [
     'TRAVEL', 'PHONE', 'CHARGES', 'Bank_Transfer', 'HMRC', 'RENT', 'BILLS',
 ];
 
-const YELLOW_FILL: ExcelJS.Fill = {
-    type: 'pattern',
-    pattern: 'solid',
-    fgColor: { argb: 'FFFFFF00' },
-};
+const YELLOW_FILL: ExcelJS.Fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFFF00' } };
+const MONEY_FMT = '#,##0.00';
+
+// Verification summary goes to the right of the main table (cols 19-20),
+// starting at row 3, so transactions are never interrupted.
+const VER_LABEL_COL = 19;
+const VER_VALUE_COL = 20;
+
+function addVerificationSide(ws: ExcelJS.Worksheet, v: VerificationSummary): void {
+    let r = 3;
+
+    const write = (label: string, value?: number | string | null, bold = false) => {
+        const row = ws.getRow(r++);
+        const lc = row.getCell(VER_LABEL_COL);
+        lc.value = label;
+        if (bold) lc.font = { bold: true };
+        if (value != null) {
+            const vc = row.getCell(VER_VALUE_COL);
+            if (typeof value === 'number') {
+                vc.value = value;
+                vc.numFmt = MONEY_FMT;
+            } else {
+                vc.value = value;
+                if (bold) vc.font = { bold: true };
+            }
+        }
+        row.commit();
+    };
+
+    write('VERIFICATION SUMMARY', null, true);
+    write('');
+    if (v.openingBalance != null) write('Opening balance', v.openingBalance);
+    write('Total money in',  v.totalIn);
+    write('Total money out', v.totalOut);
+    if (v.closingBalance != null) write('Closing balance', v.closingBalance);
+    write('');
+
+    const balStatus = v.balanceOk
+        ? '✓ Balance check OK'
+        : `⚠ Mismatch — diff: ${v.balanceDiff != null ? (v.balanceDiff >= 0 ? '+' : '') + v.balanceDiff.toFixed(2) : 'unknown'}`;
+    write(balStatus, null, true);
+
+    if (v.declaredIn != null && v.declaredOut != null) {
+        write('');
+        write('Declared in (by bank)',  v.declaredIn);
+        write('Declared out (by bank)', v.declaredOut);
+        write('');
+        const declStatus = v.declaredOk
+            ? '✓ Declared totals match'
+            : `⚠ In diff: ${(v.totalIn - v.declaredIn).toFixed(2)}, Out diff: ${(v.totalOut - v.declaredOut).toFixed(2)}`;
+        write(declStatus, null, true);
+    }
+}
 
 /** "DD/MM/YYYY" → Date (UTC) */
 function parseDate(ddmmyyyy: string): Date | null {
@@ -39,7 +88,7 @@ function toNum(v: unknown): number | null {
     return isFinite(n) && n !== 0 ? n : null;
 }
 
-export async function buildPdfOutputExcel(transactions: CategorizedTransaction[]): Promise<Buffer> {
+export async function buildPdfOutputExcel(transactions: CategorizedTransaction[], verification?: VerificationSummary): Promise<Buffer> {
     const templateBuf = readFileSync(TEMPLATE_PATH);
 
     const workbook = new ExcelJS.Workbook();
@@ -107,6 +156,11 @@ export async function buildPdfOutputExcel(transactions: CategorizedTransaction[]
         const row = ws.getRow(r);
         row.getCell(4).fill = YELLOW_FILL;
         row.commit();
+    }
+
+    // Verification summary: placed to the right of the table (cols 19-20), no background colours
+    if (verification) {
+        addVerificationSide(ws, verification);
     }
 
     // Freeze first 2 rows

@@ -7,6 +7,7 @@ import { analyzePages } from './src/services/processing/AzureExtractor.js';
 import { classify } from './src/services/processing/DocumentClassifier.js';
 import { parse as parseVirginMoney } from './src/services/processing/parsers/virginmoney.js';
 import { Cell } from './src/services/processing/parsers/shared.js';
+import { computeVerification, logVerificationSummary } from './src/services/processing/Verification.js';
 import { categorize } from './src/services/processing/AssistantCategorizer.js';
 import { buildPdfOutputExcel } from './src/services/processing/ExcelOutputBuilder.js';
 
@@ -68,6 +69,8 @@ for (const p of pageData) {
 const { transactions } = parseVirginMoney(combined);
 console.log(`\nParsed ${transactions.length} transactions`);
 
+const verification = computeVerification(transactions);
+
 if (transactions.length > 0) {
     console.log('\nFirst 5:');
     transactions.slice(0, 5).forEach((t, i) =>
@@ -82,6 +85,11 @@ if (transactions.length > 0) {
     const totalIn  = transactions.reduce((s, t) => s + (parseFloat(t.moneyIn  || '0') || 0), 0);
     const totalOut = transactions.reduce((s, t) => s + (parseFloat(t.moneyOut || '0') || 0), 0);
     console.log(`\nTotals — Money In: ${totalIn.toFixed(2)}  Money Out: ${totalOut.toFixed(2)}`);
+
+    if (verification) {
+        console.log('\nTotals verification:');
+        logVerificationSummary(verification);
+    }
 }
 
 console.log('\nRunning categorization...');
@@ -90,7 +98,7 @@ console.log('\nFirst 5 categorized:');
 categorized.slice(0, 5).forEach((t, i) =>
     console.log(`  [${i+1}] ${t.DATE} | ${(t['Type and Description']||'').slice(0,40).padEnd(40)} | INCOME:${(t.INCOME||'').padStart(10)} OTHER:${(t.OTHER||'').padStart(10)} bal:${t.Balance}`)
 );
-const outputBuffer = await buildPdfOutputExcel(categorized);
+const outputBuffer = await buildPdfOutputExcel(categorized, verification);
 const outPath = filePath.replace(/\.pdf(\.\w+)?$/i, '') + '_processed.xlsx';
 writeFileSync(outPath, outputBuffer);
 console.log(`\nOutput saved: ${outPath}`);
