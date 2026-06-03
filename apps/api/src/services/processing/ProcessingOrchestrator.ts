@@ -118,10 +118,10 @@ function parseTransactionDate(dateStr: string): number {
 }
 
 /**
- * Sort transactions from multiple files by date descending (newest first),
- * keeping HSBC-style balance-blocks (intermediate rows with no balance) intact.
+ * Sort transactions from multiple files, keeping HSBC-style balance-blocks intact.
+ * ascending=false (default) → newest first; ascending=true → oldest first (e.g. Mettle).
  */
-function sortTransactions(transactions: ParsedTransaction[]): ParsedTransaction[] {
+function sortTransactions(transactions: ParsedTransaction[], ascending = false): ParsedTransaction[] {
     const units: ParsedTransaction[][] = [];
     let i = 0;
     while (i < transactions.length) {
@@ -134,10 +134,10 @@ function sortTransactions(transactions: ParsedTransaction[]): ParsedTransaction[
             units.push([transactions[i++]]);
         }
     }
-    // Stable descending sort (newest first — matches original statement format)
-    units.sort((a, b) =>
-        parseTransactionDate(b[b.length - 1].date) - parseTransactionDate(a[a.length - 1].date)
-    );
+    units.sort((a, b) => {
+        const diff = parseTransactionDate(b[b.length - 1].date) - parseTransactionDate(a[a.length - 1].date);
+        return ascending ? -diff : diff;
+    });
     return units.flat();
 }
 
@@ -227,6 +227,7 @@ async function runBatchJob(jobId: string, files: FileInput[], tracking?: Trackin
         const allTransactions: ParsedTransaction[] = [];
         let confirmedBankType: BankType | null = null;
         let combinedStatementTotals: { moneyIn: number; moneyOut: number } | undefined;
+        let ascending = false;
 
         for (let fi = 0; fi < files.length; fi++) {
             const { filename, mimeType, buffer } = files[fi];
@@ -310,7 +311,8 @@ async function runBatchJob(jobId: string, files: FileInput[], tracking?: Trackin
             }
 
             jobStore.update(jobId, { currentStage: 'parse' });
-            const { transactions: fileTransactions, statementTotals } = await parseAllCells(pageCells, bankType);
+            const { transactions: fileTransactions, statementTotals, ascending: fileAscending } = await parseAllCells(pageCells, bankType);
+            if (fileAscending) ascending = true;
             console.log(`[Orchestrator] File ${fi + 1}/${files.length} "${filename}": ${fileTransactions.length} transactions`);
             if (statementTotals) {
                 if (!combinedStatementTotals) combinedStatementTotals = { ...statementTotals };
@@ -321,11 +323,11 @@ async function runBatchJob(jobId: string, files: FileInput[], tracking?: Trackin
 
         if (allTransactions.length === 0) throw new Error('No transactions found in any of the uploaded files');
 
-        // Sort all transactions by date descending and verify balance continuity
-        const sorted = files.length > 1 ? sortTransactions(allTransactions) : allTransactions;
+        // Sort by date, preserving the bank's natural order (ascending for Mettle, descending for all others)
+        const sorted = files.length > 1 ? sortTransactions(allTransactions, ascending) : allTransactions;
         if (files.length > 1) verifyBalances(sorted);
 
-        const verification = computeVerification(sorted, combinedStatementTotals);
+        const verification = computeVerification(sorted, combinedStatementTotals, ascending);
         if (verification) logVerificationSummary(verification);
 
         jobStore.update(jobId, { currentStage: 'categorize', currentFile: undefined });
@@ -482,11 +484,11 @@ async function runJob(jobId: string, filename: string, mimeType: string, fileBuf
                 }
             }
 
-            const { transactions, statementTotals } = await parseAllCells(pageCells, bankType);
+            const { transactions, statementTotals, ascending } = await parseAllCells(pageCells, bankType);
             if (transactions.length === 0) throw new Error('No transactions could be extracted from the document');
 
             console.log(`[Orchestrator] Parsed ${transactions.length} transactions:`, JSON.stringify(transactions, null, 2));
-            const verification = computeVerification(transactions, statementTotals);
+            const verification = computeVerification(transactions, statementTotals, ascending);
             if (verification) logVerificationSummary(verification);
 
             // ── Stage: categorize (OpenAI Assistant, 50 transactions per batch) ──

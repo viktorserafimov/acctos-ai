@@ -19,30 +19,32 @@ export interface VerificationSummary {
 
 /**
  * Compute verification summary from parsed transactions.
- * Transactions must be sorted newest-first (descending).
+ * ascending=true  → oldest transaction first (e.g. Mettle)
+ * ascending=false → newest transaction first (default, all other banks)
  */
 export function computeVerification(
     transactions: ParsedTransaction[],
     declared?: { moneyIn: number; moneyOut: number },
+    ascending = false,
 ): VerificationSummary | undefined {
     if (!transactions.length) return undefined;
 
     const totalIn  = transactions.reduce((s, t) => s + (parseMoney(t.moneyIn)  ?? 0), 0);
     const totalOut = transactions.reduce((s, t) => s + (parseMoney(t.moneyOut) ?? 0), 0);
 
-    const first = transactions[0];
-    const last  = transactions[transactions.length - 1];
-    const closingBal = parseMoney(first.balance);
-    const oldestBal  = parseMoney(last.balance);
+    const oldest = ascending ? transactions[0] : transactions[transactions.length - 1];
+    const newest = ascending ? transactions[transactions.length - 1] : transactions[0];
+    const closingBal = parseMoney(newest.balance);
+    const oldestBal  = parseMoney(oldest.balance);
 
     let openingBalance: number | null = null;
     let balanceOk = true;
     let balanceDiff: number | null = null;
 
     if (closingBal !== null && oldestBal !== null) {
-        const lastIn  = parseMoney(last.moneyIn)  ?? 0;
-        const lastOut = parseMoney(last.moneyOut) ?? 0;
-        openingBalance = oldestBal - lastIn + lastOut;
+        const oldestIn  = parseMoney(oldest.moneyIn)  ?? 0;
+        const oldestOut = parseMoney(oldest.moneyOut) ?? 0;
+        openingBalance = oldestBal - oldestIn + oldestOut;
         const expected = openingBalance + totalIn - totalOut;
         balanceDiff = closingBal - expected;
         balanceOk = Math.abs(balanceDiff) <= 0.02;

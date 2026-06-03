@@ -88,7 +88,6 @@ export function parse(cells: Cell[]): ParseResult {
         transactions.push({ date, type: '', description, moneyIn, moneyOut, balance });
     }
 
-    // Return newest-first (descending) to match computeVerification expectations
-    transactions.reverse();
-    return { transactions, statementTotals };
+    // Mettle PDF is oldest-first — preserve that order; callers use ascending=true
+    return { transactions, statementTotals, ascending: true };
 }

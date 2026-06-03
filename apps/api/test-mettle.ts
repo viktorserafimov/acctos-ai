@@ -66,14 +66,14 @@ for (const p of pageData) {
     if (pageMaxRow >= 0) rowOffset += pageMaxRow + 10000;
 }
 
-const { transactions, statementTotals } = parseMettle(combined);
+const { transactions, statementTotals, ascending } = parseMettle(combined);
 console.log(`Parsed ${transactions.length} transactions`);
 
 if (statementTotals) {
     console.log(`Declared by bank — Money In: ${statementTotals.moneyIn.toFixed(2)}  Money Out: ${statementTotals.moneyOut.toFixed(2)}`);
 }
 
-const verification = computeVerification(transactions, statementTotals);
+const verification = computeVerification(transactions, statementTotals, ascending);
 
 if (transactions.length > 0) {
     console.log('\nFirst 5:');
