@@ -162,9 +162,10 @@ export async function buildPdfOutputExcel(transactions: CategorizedTransaction[]
         row.commit();
     });
 
-    // Fill column D yellow for all remaining rows up to 1000
+    // Fill column D yellow for all remaining rows — always at least 250 beyond data, minimum row 1000
     const lastDataRow = transactions.length + 2;
-    for (let r = lastDataRow + 1; r <= 1000; r++) {
+    const yellowEnd = Math.max(1000, lastDataRow + 250);
+    for (let r = lastDataRow + 1; r <= yellowEnd; r++) {
         const row = ws.getRow(r);
         row.getCell(4).fill = YELLOW_FILL;
         row.commit();
