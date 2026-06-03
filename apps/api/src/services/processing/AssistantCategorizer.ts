@@ -270,5 +270,29 @@ export async function categorize(transactions: ParsedTransaction[]): Promise<Cat
         }
     }
 
+    // ── Enforce parser amounts ────────────────────────────────────────────────
+    // AI chooses the category; parser owns the amount. Overwrite every row's
+    // amount with the exact value from the parser so category totals always match.
+    const EXP_ONLY = ['SALARY','OTHER','INSURANCE','LOAN','CASH','TRAVEL','PHONE','CHARGES','Bank_Transfer','HMRC','RENT','BILLS'] as const;
+
+    for (let i = 0; i < results.length; i++) {
+        const t   = transactions[i];
+        const row = results[i];
+        const moneyIn  = parseMoney(t.moneyIn  || '');
+        const moneyOut = parseMoney(t.moneyOut || '');
+
+        if (moneyIn !== null && moneyIn > 0) {
+            row.INCOME = fmt(moneyIn);
+            for (const k of EXP_ONLY) (row as any)[k] = '';
+        } else if (moneyOut !== null && moneyOut > 0) {
+            row.INCOME = '';
+            // Find which expense column AI chose (prefer most-specific over OTHER)
+            const filled = EXP_ONLY.filter(k => parseMoney((row as any)[k]) !== null);
+            const target = filled.find(k => k !== 'OTHER') ?? filled[0] ?? 'OTHER';
+            for (const k of EXP_ONLY) (row as any)[k] = '';
+            (row as any)[target] = '-' + fmt(moneyOut);
+        }
+    }
+
     return results;
 }
