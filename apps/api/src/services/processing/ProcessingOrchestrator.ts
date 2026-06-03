@@ -1,4 +1,4 @@
-import { randomUUID } from 'crypto';
+import { randomUUID, createHash } from 'crypto';
 import { PrismaClient } from '@prisma/client';
 import { PrismaClientKnownRequestError } from '@prisma/client/runtime/library';
 import { jobStore } from './JobStore.js';
@@ -179,13 +179,40 @@ export interface FileInput {
 
 /**
  * Start a batch job: parse all files, sort by date, verify balances, categorize, produce one Excel.
+ * Deduplicates files by SHA-256 content hash before processing.
  */
 export function startBatchProcessingJob(files: FileInput[], tracking?: TrackingContext): string {
     const jobId = randomUUID();
-    const batchName = files.length === 1 ? files[0].filename : `${files.length} files`;
+
+    // Deduplicate by content hash — identical bytes across differently-named files get dropped
+    const seen = new Set<string>();
+    const uniqueFiles: FileInput[] = [];
+    const duplicatesRemoved: string[] = [];
+    for (const f of files) {
+        const hash = createHash('sha256').update(f.buffer).digest('hex');
+        if (seen.has(hash)) {
+            duplicatesRemoved.push(f.filename);
+            console.warn(`[Orchestrator] Duplicate removed: "${f.filename}" (identical content already queued)`);
+        } else {
+            seen.add(hash);
+            uniqueFiles.push(f);
+        }
+    }
+
+    const batchName = uniqueFiles.length === 1 ? uniqueFiles[0].filename : `${uniqueFiles.length} files`;
     jobStore.create(jobId, batchName);
 
-    runBatchJob(jobId, files, tracking).catch(err => {
+    if (duplicatesRemoved.length > 0) {
+        jobStore.update(jobId, { duplicatesRemoved });
+        console.log(`[Orchestrator] ${duplicatesRemoved.length} duplicate(s) removed. Processing ${uniqueFiles.length} unique file(s).`);
+    }
+
+    if (uniqueFiles.length === 0) {
+        jobStore.update(jobId, { status: 'failed', error: 'All uploaded files are duplicates — no unique files to process.' });
+        return jobId;
+    }
+
+    runBatchJob(jobId, uniqueFiles, tracking).catch(err => {
         console.error(`[Orchestrator] Batch job ${jobId} unhandled crash:`, err);
         jobStore.update(jobId, { status: 'failed', error: String(err?.message ?? err) });
     });
