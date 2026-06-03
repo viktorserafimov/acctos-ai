@@ -59,17 +59,10 @@ function deduplicateExpenseColumns(row: CategorizedTransaction): void {
 }
 
 function applyFallbackToRow(row: CategorizedTransaction, src: any): void {
-    const moneyOut = parseMoney(src['Money out']);
-    const moneyIn  = parseMoney(src['Money in']);
-
-    // Direction guard: an outgoing transaction must never appear as INCOME
-    if (moneyOut !== null && moneyOut > 0 && parseMoney(row.INCOME) !== null) {
-        if (!row.OTHER) row.OTHER = '-' + fmt(moneyOut);
-        row.INCOME = '';
-    }
-
     const filledCount = EXPENSE_CATS.filter(k => ((row as any)[k] || '').trim() !== '').length;
     if (filledCount === 0) {
+        const moneyOut = parseMoney(src['Money out']);
+        const moneyIn  = parseMoney(src['Money in']);
         if (moneyOut !== null && moneyOut > 0) (row as any).OTHER = '-' + fmt(moneyOut);
         else if (moneyIn !== null && moneyIn > 0) (row as any).INCOME = fmt(moneyIn);
     }
@@ -218,5 +211,64 @@ export async function categorize(transactions: ParsedTransaction[]): Promise<Cat
         })
     );
 
-    return batchResults.flat();
+    const results = batchResults.flat();
+
+    // ── Post-categorization direction reconciliation ──────────────────────────
+    // Compare AI results against parser-confirmed direction and fix mismatches.
+    const autoFixedIn: number[] = [];
+    const retryOutIndices: number[] = [];
+
+    for (let i = 0; i < results.length; i++) {
+        const t   = transactions[i];
+        const row = results[i];
+        const moneyIn  = parseMoney(t.moneyIn  || '');
+        const moneyOut = parseMoney(t.moneyOut || '');
+
+        if (moneyIn !== null && moneyIn > 0 && parseMoney(row.INCOME) === null) {
+            // Parser says IN but AI put it in an expense column — auto-fix to INCOME
+            const hasExpenseAmt = EXPENSE_CATS.filter(k => k !== 'INCOME')
+                .some(k => parseMoney((row as any)[k]) !== null);
+            if (hasExpenseAmt) {
+                for (const k of EXPENSE_CATS) if (k !== 'INCOME') (row as any)[k] = '';
+                row.INCOME = fmt(moneyIn);
+                autoFixedIn.push(i);
+            }
+        }
+
+        if (moneyOut !== null && moneyOut > 0 && parseMoney(row.INCOME) !== null) {
+            // Parser says OUT but AI classified as INCOME — retry with explicit instruction
+            retryOutIndices.push(i);
+        }
+    }
+
+    if (autoFixedIn.length > 0) {
+        console.log(`[Categorizer] Auto-fixed ${autoFixedIn.length} IN transaction(s) misclassified as expense.`);
+    }
+
+    if (retryOutIndices.length > 0) {
+        console.log(`[Categorizer] Retrying ${retryOutIndices.length} OUT transaction(s) misclassified as INCOME...`);
+        const retryInput = retryOutIndices.map(i => ({
+            ...formatTransactionsForAssistant([transactions[i]])[0],
+            '_note': 'OUTGOING PAYMENT — Money out. This is an expense. Do NOT put in INCOME. Choose the correct expense category.',
+        }));
+
+        const retried = await categorizeBatch(retryInput, apiKey);
+
+        for (let j = 0; j < retryOutIndices.length; j++) {
+            const i   = retryOutIndices[j];
+            const row = retried[j];
+            if (!row) continue;
+
+            const moneyOut = parseMoney(transactions[i].moneyOut || '');
+            if (parseMoney(row.INCOME) !== null) {
+                // Retry still misclassified — force to OTHER as last resort
+                row.INCOME = '';
+                if (!row.OTHER && moneyOut !== null) row.OTHER = '-' + fmt(moneyOut);
+                console.warn(`[Categorizer] "${transactions[i].description}" still misclassified after retry — forced to OTHER.`);
+            }
+            results[i] = row;
+        }
+    }
+
+    return results;
 }
