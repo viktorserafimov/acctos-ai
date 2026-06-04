@@ -65,7 +65,6 @@ export function detectBankFromContent(text: string): BankType {
     const t = text.toLowerCase();
     // Use word-boundary-style checks to reduce false positives
     if (/\bhsbc\b/.test(t))                                          return 'hsbc';
-    if (/\brevolut\b/.test(t))                                       return 'revolut';
     if (/\bmonzo\b/.test(t))                                         return 'monzo';
     if (/wise\.com\/help/.test(t) || /\bref:\s*[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/i.test(t)) return 'wise';
     if (/\bstarling\b/.test(t))                                      return 'starling';
@@ -79,8 +78,11 @@ export function detectBankFromContent(text: string): BankType {
     if (/\bsantander\b/.test(t))                                     return 'santander';
     if (/\bbarclays\b/.test(t))                                      return 'barclays';
     if (/\bmetro bank\b/.test(t))                                    return 'metro';
-    if (/\blloyds\b/.test(t))                                        return 'lloyds';
+    // Check institutional bank names before generic brand names that appear as payees
+    if (/\blloyds\s+bank\b/.test(t))                                 return 'lloyds';
     if (/\btsb\b/.test(t) || /203\s*284\s*1576/.test(t))            return 'tsb';
+    if (/\brevolut\b/.test(t))                                       return 'revolut';
+    if (/\blloyds\b/.test(t))                                        return 'lloyds';
     return 'generic';
 }
 
