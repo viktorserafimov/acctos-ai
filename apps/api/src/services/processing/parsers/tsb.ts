@@ -81,8 +81,8 @@ export function parse(cells: Cell[]): ParseResult {
             vals.includes('date') &&
             vals.some(v => v.includes('payment type')) &&
             vals.some(v => v === 'details') &&
-            vals.some(v => v.includes('paid out')) &&
-            vals.some(v => v.includes('paid in')) &&
+            vals.some(v => v.includes('paid out') || v.includes('money out')) &&
+            vals.some(v => v.includes('paid in') || v.includes('money in')) &&
             vals.some(v => v.startsWith('balance'));
 
         const isNewHeader =
@@ -103,8 +103,8 @@ export function parse(cells: Cell[]): ParseResult {
             if (format === 'old') {
                 if (vl === 'payment type')        COL_TYPE    = col;
                 else if (vl === 'details')         COL_DETAILS = col;
-                else if (vl.includes('paid out'))  COL_OUT     = col;
-                else if (vl.includes('paid in'))   COL_IN      = col;
+                else if (vl.includes('paid out') || vl.includes('money out'))  COL_OUT = col;
+                else if (vl.includes('paid in') || vl.includes('money in'))   COL_IN  = col;
                 else if (vl.startsWith('balance')) COL_BAL     = col;
             } else {
                 if (vl === 'description')                              COL_DETAILS = col;
@@ -144,7 +144,8 @@ export function parse(cells: Cell[]): ParseResult {
         if (!date) continue;
 
         const rowText = normStr(`${type} ${details}`).toUpperCase();
-        if (rowText.includes('BALANCE BROUGHT FORWARD') || rowText.includes('BALANCE CARRIED FORWARD')) continue;
+        if (rowText.includes('BALANCE BROUGHT FORWARD') || rowText.includes('BALANCE CARRIED FORWARD') ||
+            rowText.includes('STATEMENT OPENING BALANCE') || rowText.includes('STATEMENT CLOSING BALANCE')) continue;
         if (!paidIn && !paidOut) continue;
 
         transactions.push({ date, type, description: details, moneyIn: paidIn, moneyOut: paidOut, balance });
