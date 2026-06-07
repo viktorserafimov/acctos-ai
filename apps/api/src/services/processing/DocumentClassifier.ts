@@ -1,6 +1,6 @@
 export type BankType =
     | 'hsbc' | 'revolut' | 'monzo' | 'wise' | 'starling'
-    | 'natwest' | 'mettle' | 'nationwide' | 'santander' | 'barclays' | 'metro'
+    | 'natwest' | 'mettle' | 'nationwide' | 'santander' | 'barclays' | 'barclaycard' | 'metro'
     | 'lloyds' | 'tsb' | 'tide' | 'rbs' | 'virginmoney' | 'pockit' | 'zempler'
     | 'generic';
 
@@ -53,6 +53,7 @@ function detectBank(lower: string): BankType {
     if (lower.includes('pockit'))                                  return 'pockit';
     if (lower.includes('nationwide'))                             return 'nationwide';
     if (lower.includes('santander'))                              return 'santander';
+    if (lower.includes('barclaycard'))                            return 'barclaycard';
     if (lower.includes('barclays'))                               return 'barclays';
     if (lower.includes('metro'))                                  return 'metro';
     if (lower.includes('lloyds'))                                 return 'lloyds';
@@ -82,6 +83,7 @@ export function detectBankFromContent(text: string): BankType {
     if (t.includes('internet-banking.ib.apps.virginmoney.com/vm/homepage')) return 'virginmoney';
     if (/\bpockit\b/.test(t) || /help@pockit\.com/.test(t))          return 'pockit';
     if (/\bnationwide\b/.test(t))                                    return 'nationwide';
+    if (/\bbarclaycard\b/i.test(t))                                  return 'barclaycard';
     if (/\bbarclays\b/.test(t))                                      return 'barclays';
     if (/\btsb\b/.test(t) || /203\s*284\s*1576/.test(t))            return 'tsb';
     if (/\brevolut\b/.test(t))                                       return 'revolut';

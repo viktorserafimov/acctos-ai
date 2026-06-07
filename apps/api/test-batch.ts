@@ -19,7 +19,8 @@ import { parse as parseStarling }   from './src/services/processing/parsers/star
 import { parse as parseNatwest }    from './src/services/processing/parsers/natwest.js';
 import { parse as parseNationwide } from './src/services/processing/parsers/nationwide.js';
 import { parse as parseSantander }  from './src/services/processing/parsers/santander.js';
-import { parse as parseBarclays }   from './src/services/processing/parsers/barclays.js';
+import { parse as parseBarclays }    from './src/services/processing/parsers/barclays.js';
+import { parse as parseBarclaycard } from './src/services/processing/parsers/barclaycard.js';
 import { parse as parseMetro }      from './src/services/processing/parsers/metro.js';
 import { parse as parseLloyds }     from './src/services/processing/parsers/lloyds.js';
 import { parse as parseTsb }        from './src/services/processing/parsers/tsb.js';
@@ -51,6 +52,7 @@ function getParser(bankType: string) {
         case 'nationwide':  return parseNationwide;
         case 'santander':   return parseSantander;
         case 'barclays':    return parseBarclays;
+        case 'barclaycard': return parseBarclaycard;
         case 'metro':       return parseMetro;
         case 'lloyds':      return parseLloyds;
         case 'tsb':         return parseTsb;
