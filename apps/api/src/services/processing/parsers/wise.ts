@@ -163,8 +163,10 @@ export function parse(cells: Cell[]): ParseResult {
         const c1 = normStr(getCell(grid, r, 1));
         const c2 = normStr(getCell(grid, r, 2));
         const c3 = normStr(getCell(grid, r, 3));
+        const c4 = normStr(getCell(grid, r, 4));
+        const c5 = normStr(getCell(grid, r, 5));
 
-        if (!c0 && !c1 && !c2 && !c3) continue;
+        if (!c0 && !c1 && !c2 && !c3 && !c4 && !c5) continue;
         if (isHeaderRow(c0))           continue;
 
         // ── Meta line ─────────────────────────────────────────────────────────
@@ -190,12 +192,31 @@ export function parse(cells: Cell[]): ParseResult {
             (n3 !== null && Math.abs(n3) > MAX_SANE_AMOUNT)
         ) continue;
 
-        const rowIsFourCol = c3 !== '';
+        // 6-col wide format used on some Wise statement pages:
+        // [desc, extra_desc, '', incoming, outgoing, balance]
+        // Detected when c5 holds a parseable balance value.
+        const n5 = parseNumber(c5);
+        const rowIsSixCol = n5 !== null;
+        const rowIsFourCol = !rowIsSixCol && c3 !== '';
         let moneyIn:  number | null = null;
         let moneyOut: number | null = null;
         let balance:  number | null = null;
 
-        if (rowIsFourCol) {
+        if (rowIsSixCol) {
+            // 6-col: [desc, extra_desc, '', incoming, outgoing, balance]
+            moneyIn  = parseNumber(c3);
+            moneyOut = parseNumber(c4);
+            balance  = n5;
+            // Outgoing amounts appear with a leading minus in this format
+            if (moneyOut !== null && moneyOut < 0) moneyOut = Math.abs(moneyOut);
+            if (moneyIn  !== null && moneyIn  < 0) { moneyOut = Math.abs(moneyIn); moneyIn = null; }
+            // Fallback: "Received money" with no parsed incoming → extract from text
+            if (moneyIn === null && c0.toUpperCase().includes('RECEIVED MONEY')) {
+                const n = parseNumber(c0);
+                if (n !== null) moneyIn = Math.abs(n);
+            }
+
+        } else if (rowIsFourCol) {
             // 4-col: [desc, incoming, outgoing, balance]
             moneyIn  = parseNumber(c1);
             moneyOut = parseNumber(c2);
