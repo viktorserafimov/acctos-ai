@@ -200,8 +200,8 @@ sorted.slice(-3).forEach((t, i) =>
     console.log(`  [${sorted.length - 2 + i}] ${t.date} | ${t.type.padEnd(16)} | ${t.description.slice(0, 35).padEnd(35)} | out:${(t.moneyOut||'').padStart(10)} in:${(t.moneyIn||'').padStart(10)} bal:${t.balance}`)
 );
 
-const totalIn  = sorted.reduce((s, t) => s + (parseFloat(t.moneyIn  || '0') || 0), 0);
-const totalOut = sorted.reduce((s, t) => s + (parseFloat(t.moneyOut || '0') || 0), 0);
+const totalIn  = sorted.reduce((s, t) => s + (parseFloat((t.moneyIn  || '0').replace(/,/g, '')) || 0), 0);
+const totalOut = sorted.reduce((s, t) => s + (parseFloat((t.moneyOut || '0').replace(/,/g, '')) || 0), 0);
 console.log(`\nTotals — Money In: ${totalIn.toFixed(2)}  Money Out: ${totalOut.toFixed(2)}`);
 if (combinedStatementTotals) {
     console.log(`Declared combined — In: ${combinedStatementTotals.moneyIn.toFixed(2)}  Out: ${combinedStatementTotals.moneyOut.toFixed(2)}`);
