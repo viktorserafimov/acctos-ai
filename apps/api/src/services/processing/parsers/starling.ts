@@ -104,7 +104,7 @@ function extractFromSection(
 }
 
 function rawFallback(rawText: string, existing: ParsedTransaction[]): ParseResult {
-    if (!rawText) return { transactions: existing };
+    if (!rawText) return { transactions: existing, ascending: true };
 
     // Find the LAST "Starling Bank 24hr Customer Service:" page header in the raw text
     const markerRe = /(?:^|\s)(?:\d+\s+)?(?:S\s+)?Starling Bank\s+24hr Customer Service:/gi;
@@ -112,7 +112,7 @@ function rawFallback(rawText: string, existing: ParsedTransaction[]): ParseResul
     let m: RegExpExecArray | null;
     while ((m = markerRe.exec(rawText)) !== null) lastMatch = m;
 
-    if (!lastMatch) return { transactions: existing };
+    if (!lastMatch) return { transactions: existing, ascending: true };
 
     // Only scan from the last page header, stop before interest/legal section
     let zone = rawText.slice(lastMatch.index);
@@ -161,7 +161,7 @@ function rawFallback(rawText: string, existing: ParsedTransaction[]): ParseResul
         }
     }
 
-    return { transactions };
+    return { transactions, ascending: true };
 }
 
 export function parse(cells: Cell[]): ParseResult {
@@ -203,7 +203,7 @@ export function parse(cells: Cell[]): ParseResult {
     flushSection();
 
     // Raw text fallback only when table extraction found nothing
-    if (transactions.length > 0) return { transactions };
+    if (transactions.length > 0) return { transactions, ascending: true };
 
     return rawFallback(rawText, transactions);
 }

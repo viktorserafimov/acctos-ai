@@ -79,7 +79,7 @@ function applyFallbackToRow(row: CategorizedTransaction, src: any): void {
 function buildFallbackRow(src: any): CategorizedTransaction {
     const row = {} as CategorizedTransaction;
     row.DATE = src['Date'] || '';
-    row['Type and Description'] = `${src['Type'] || ''} ${src['Description'] || ''}`.trim();
+    row['Type and Description'] = src['Description'] || '';
     row.Balance = src['Balance'] || '';
     for (const k of EXPENSE_CATS) (row as any)[k] = '';
     applyFallbackToRow(row, src);
@@ -95,7 +95,7 @@ function applyFallback(items: CategorizedTransaction[], rawTransactions: object[
     if (items.length === rawTransactions.length) {
         for (let i = 0; i < items.length; i++) {
             const src = rawTransactions[i] as any;
-            const typeAndDesc = `${src['Type'] || ''} ${src['Description'] || ''}`.trim();
+            const typeAndDesc = src['Description'] || '';
             if (typeAndDesc) items[i]['Type and Description'] = typeAndDesc;
             applyFallbackToRow(items[i], src);
             deduplicateExpenseColumns(items[i]);
@@ -113,7 +113,7 @@ function applyFallback(items: CategorizedTransaction[], rawTransactions: object[
     return rawTransactions.map((src_: any) => {
         const key = `${src_['Date']}|${src_['Balance'] ?? ''}`;
         const row = catByKey.get(key) ?? buildFallbackRow(src_);
-        const typeAndDesc = `${src_['Type'] || ''} ${src_['Description'] || ''}`.trim();
+        const typeAndDesc = src_['Description'] || '';
         if (typeAndDesc) row['Type and Description'] = typeAndDesc;
         applyFallbackToRow(row, src_);
         deduplicateExpenseColumns(row);
@@ -121,7 +121,7 @@ function applyFallback(items: CategorizedTransaction[], rawTransactions: object[
     });
 }
 
-const BATCH_SIZE = 50;
+const BATCH_SIZE = 25;
 const MODEL      = 'gpt-4o-mini';
 
 async function categorizeBatch(batch: object[], apiKey: string): Promise<CategorizedTransaction[]> {
@@ -134,6 +134,7 @@ async function categorizeBatch(batch: object[], apiKey: string): Promise<Categor
         body: JSON.stringify({
             model: MODEL,
             temperature: 0,
+            max_tokens: 16384,
             messages: [
                 { role: 'system', content: SYSTEM_PROMPT },
                 { role: 'user',   content: JSON.stringify(batch) },
@@ -146,7 +147,12 @@ async function categorizeBatch(batch: object[], apiKey: string): Promise<Categor
         throw new Error(`OpenAI API error ${res.status}: ${err}`);
     }
 
-    const data    = await res.json() as any;
+    const data         = await res.json() as any;
+    const finishReason = data.choices?.[0]?.finish_reason;
+    const usage        = data.usage;
+    if (finishReason === 'length') {
+        throw new Error('OpenAI response truncated (finish_reason=length) — batch too large for max_tokens');
+    }
     const content = data.choices?.[0]?.message?.content || '';
     const cleaned = content.replace(/```json\s*/gi, '').replace(/```\s*/gi, '').trim();
 
@@ -158,6 +164,9 @@ async function categorizeBatch(batch: object[], apiKey: string): Promise<Categor
     }
 
     const items: CategorizedTransaction[] = Array.isArray(parsed) ? parsed : (parsed.items || []);
+    if (items.length === 0 && batch.length > 0) {
+        console.warn(`[Categorizer] Empty response — finish_reason=${finishReason} tokens=${JSON.stringify(usage)} content_len=${cleaned.length} first_tx=${JSON.stringify(batch[0]).slice(0, 100)}`);
+    }
     return applyFallback(items, batch);
 }
 
@@ -226,7 +235,13 @@ export async function categorize(transactions: ParsedTransaction[]): Promise<Cat
             '_note': 'OUTGOING PAYMENT — Money out. This is an expense. Do NOT put in INCOME. Choose the correct expense category.',
         }));
 
-        const retried = await categorizeBatch(retryInput, apiKey);
+        // Split retry into same-sized batches to avoid truncation
+        const retryBatches: object[][] = [];
+        for (let i = 0; i < retryInput.length; i += BATCH_SIZE) {
+            retryBatches.push(retryInput.slice(i, i + BATCH_SIZE));
+        }
+        const retryResults = await Promise.all(retryBatches.map(b => categorizeBatch(b, apiKey)));
+        const retried = retryResults.flat();
 
         for (let j = 0; j < retryOutIndices.length; j++) {
             const i   = retryOutIndices[j];
@@ -264,6 +279,10 @@ export async function categorize(transactions: ParsedTransaction[]): Promise<Cat
             const target = filled.find(k => k !== 'OTHER') ?? filled[0] ?? 'OTHER';
             for (const k of EXP_ONLY) (row as any)[k] = '';
             (row as any)[target] = '-' + fmt(moneyOut);
+        } else {
+            // Parser found no amount — clear any AI-hallucinated values
+            row.INCOME = '';
+            for (const k of EXP_ONLY) (row as any)[k] = '';
         }
     }
 
