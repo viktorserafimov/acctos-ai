@@ -33,6 +33,9 @@ import { parse as parseRbs } from './parsers/rbs.js';
 import { parse as parseVirginMoney } from './parsers/virginmoney.js';
 import { parse as parsePockit } from './parsers/pockit.js';
 import { parse as parseMettle } from './parsers/mettle.js';
+import { parse as parseBarclaycard } from './parsers/barclaycard.js';
+import { parse as parseZempler } from './parsers/zempler.js';
+import { parse as parseCountingup } from './parsers/countingup.js';
 import { parse as parseGeneric } from './parsers/generic.js';
 import { parse as parseFallback } from './parsers/fallback.js';
 
@@ -52,6 +55,9 @@ function getParser(bankType: BankType): StandardParser {
         case 'nationwide': return parseNationwide;
         case 'santander':  return parseSantander;
         case 'barclays':   return parseBarclays;
+        case 'barclaycard': return parseBarclaycard;
+        case 'zempler':    return parseZempler;
+        case 'countingup': return parseCountingup;
         case 'metro':      return parseMetro;
         case 'lloyds':     return parseLloyds;
         case 'tsb':        return parseTsb;
