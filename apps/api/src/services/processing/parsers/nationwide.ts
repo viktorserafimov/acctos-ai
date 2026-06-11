@@ -60,6 +60,8 @@ function detectCols(row: Map<number, string>): { dateCol: number; descCol: numbe
 function amt(s: string): string {
     if (/\d%/.test(s)) return '';  // reject "2.99% of the transaction amount" style fee-table strings
     if (/^\s*[£$€]?\s*[\d,]+\.?\d*\s+[a-zA-Z]/.test(s)) return '';  // reject "£2.94 for 7 days" style fee-table strings
+    if (/^\d{6,}$/.test(s.trim())) return '';  // reject bare integers ≥6 digits (account numbers, sort codes)
+    if (/\d\s+\d/.test(s)) return '';  // reject digit-space-digit e.g. "99 4 of 6" (statement/page numbers)
     const n = parseMoney(s);
     return n !== null && n !== 0 ? formatMoney(n) : '';
 }
