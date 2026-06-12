@@ -342,6 +342,15 @@ async function runBatchJob(jobId: string, files: FileInput[], tracking?: Trackin
         const sorted = files.length > 1 ? sortTransactions(allTransactions, ascending) : allTransactions;
         if (files.length > 1) verifyBalances(sorted);
 
+        // For multi-file batches, individual statements are processed in upload order (alphabetical),
+        // not chronological order. Opening/closing from individual summaries are therefore unreliable —
+        // strip them so computeVerification derives opening/closing from the sorted transaction array,
+        // which IS in chronological order. moneyIn/Out sums are kept (they're always correct).
+        if (files.length > 1 && combinedStatementTotals) {
+            combinedStatementTotals.openingBalance = undefined;
+            combinedStatementTotals.closingBalance = undefined;
+        }
+
         const verification = computeVerification(sorted, combinedStatementTotals, ascending);
         if (verification) logVerificationSummary(verification);
 
