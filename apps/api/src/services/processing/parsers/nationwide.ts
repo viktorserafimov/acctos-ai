@@ -84,7 +84,7 @@ export function parse(cells: Cell[]): ParseResult {
 
     function flush() {
         if (!current) return;
-        if ((current.moneyIn || current.moneyOut) && current.description) {
+        if (current.moneyIn || current.moneyOut) {
             transactions.push(current);
         }
         current = null;
