@@ -112,7 +112,10 @@ function applyFallback(items: CategorizedTransaction[], rawTransactions: object[
 
     return rawTransactions.map((src_: any) => {
         const key = `${src_['Date']}|${src_['Balance'] ?? ''}`;
-        const row = catByKey.get(key) ?? buildFallbackRow(src_);
+        const matched = catByKey.get(key);
+        // Clone so multiple transactions sharing the same Date|Balance key each get
+        // their own object — Phase 3 overwrites amounts per-transaction in-place.
+        const row = matched ? { ...matched } : buildFallbackRow(src_);
         const typeAndDesc = src_['Description'] || '';
         if (typeAndDesc) row['Type and Description'] = typeAndDesc;
         applyFallbackToRow(row, src_);
