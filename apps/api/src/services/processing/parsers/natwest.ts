@@ -280,7 +280,7 @@ export function parse(cells: Cell[]): ParseResult {
     flush();
 
     // Extract declared statement totals from the summary block (e.g. "Paid In £4,948.03 Withdrawn £3,755.76")
-    let statementTotals: { moneyIn: number; moneyOut: number } | undefined;
+    let statementTotals: { moneyIn: number; moneyOut: number; openingBalance?: number; closingBalance?: number } | undefined;
     const paidInMatch  = ocrText.match(/paid\s+in\s+[£$]?([\d,]+(?:\.\d{1,2})?)/i);
     const withdrawnMatch = ocrText.match(/withdrawn\s+[£$]?([\d,]+(?:\.\d{1,2})?)/i);
     if (paidInMatch && withdrawnMatch) {
@@ -289,6 +289,48 @@ export function parse(cells: Cell[]): ParseResult {
         if (moneyIn !== null && moneyOut !== null) {
             statementTotals = { moneyIn, moneyOut };
         }
+    }
+
+    // Extract opening/closing balance from the summary block rows (before the header row).
+    // NatWest format: c0="Previous Balance"/"New Balance", c1="£11,661.76"
+    let openingBalance: number | null = null;
+    let closingBalance: number | null = null;
+    for (let r = 0; r < headerRowIndex; r++) {
+        const row = grid.get(r);
+        if (!row) continue;
+        const label = normStr(row.get(0) ?? '').toLowerCase();
+        const valRaw = normStr(row.get(1) ?? '');
+        const val = parseMoney(valRaw);
+        if (val === null) continue;
+        if (/previous\s+balance|opening\s+balance|brought\s+forward/.test(label)) openingBalance = val;
+        else if (/new\s+balance|closing\s+balance/.test(label)) closingBalance = val;
+    }
+    // When no summary block exists (header at row 0), scan the first few rows after the header
+    // for a BROUGHT FORWARD row whose balance column gives the opening balance.
+    if (openingBalance === null) {
+        for (let r = headerRowIndex + 1; r <= Math.min(headerRowIndex + 4, rows); r++) {
+            const row = grid.get(r);
+            if (!row) continue;
+            const d1val = normStr(row.get(d1Col) ?? '').toLowerCase();
+            if (/brought\s+forward|balance\s+forward/.test(d1val)) {
+                const rawBal = balCol >= 0 ? normStr(row.get(balCol) ?? '') : '';
+                const bf = parseMoney(rawBal);
+                if (bf !== null) { openingBalance = bf; break; }
+            }
+        }
+    }
+    // Closing balance falls back to the last parsed transaction's balance
+    if (closingBalance === null && transactions.length > 0) {
+        const lastBal = transactions[transactions.length - 1].balance;
+        if (lastBal) closingBalance = parseMoney(lastBal);
+    }
+
+    if (openingBalance !== null || closingBalance !== null) {
+        statementTotals = {
+            ...(statementTotals ?? { moneyIn: 0, moneyOut: 0 }),
+            ...(openingBalance !== null ? { openingBalance } : {}),
+            ...(closingBalance !== null ? { closingBalance } : {}),
+        };
     }
 
     return { transactions, statementTotals, ascending: true };
