@@ -233,7 +233,7 @@ async function runBatchJob(jobId: string, files: FileInput[], tracking?: Trackin
         const allTransactions: ParsedTransaction[] = [];
         let confirmedBankType: BankType | null = null;
         let combinedStatementTotals: { moneyIn: number; moneyOut: number; openingBalance?: number; closingBalance?: number } | undefined;
-        const perFileTotals: Array<{ openingBalance?: number; closingBalance?: number }> = [];
+        const fileTotals: Array<{ moneyIn: number; moneyOut: number; openingBalance?: number; closingBalance?: number }> = [];
         let ascending = false;
 
         for (let fi = 0; fi < files.length; fi++) {
@@ -322,10 +322,7 @@ async function runBatchJob(jobId: string, files: FileInput[], tracking?: Trackin
             if (fileAscending) ascending = true;
             console.log(`[Orchestrator] File ${fi + 1}/${files.length} "${filename}": ${fileTransactions.length} transactions`);
             if (statementTotals) {
-                perFileTotals.push({
-                    openingBalance: statementTotals.openingBalance,
-                    closingBalance: statementTotals.closingBalance,
-                });
+                fileTotals.push(statementTotals);
                 if (!combinedStatementTotals) {
                     combinedStatementTotals = { ...statementTotals };
                 } else {
@@ -336,27 +333,31 @@ async function runBatchJob(jobId: string, files: FileInput[], tracking?: Trackin
             allTransactions.push(...fileTransactions);
         }
 
+        // Chain resolution: files may be uploaded in any order (e.g. alphabetical).
+        // Find the true first file (openingBalance not matched by any closingBalance) and
+        // true last file (closingBalance not matched by any openingBalance), then set the
+        // combined opening/closing accordingly instead of using upload-order values.
+        if (combinedStatementTotals && fileTotals.length > 1) {
+            const allClose = new Set(
+                fileTotals.filter(t => t.closingBalance !== undefined).map(t => Math.round(t.closingBalance! * 100))
+            );
+            const allOpen = new Set(
+                fileTotals.filter(t => t.openingBalance !== undefined).map(t => Math.round(t.openingBalance! * 100))
+            );
+            const firstFile = fileTotals.find(t => t.openingBalance !== undefined && !allClose.has(Math.round(t.openingBalance * 100)));
+            const lastFile  = fileTotals.find(t => t.closingBalance !== undefined && !allOpen.has(Math.round(t.closingBalance * 100)));
+            if (firstFile?.openingBalance !== undefined) combinedStatementTotals.openingBalance = firstFile.openingBalance;
+            if (lastFile?.closingBalance  !== undefined) combinedStatementTotals.closingBalance  = lastFile.closingBalance;
+        } else if (combinedStatementTotals && fileTotals.length === 1) {
+            combinedStatementTotals.openingBalance = fileTotals[0].openingBalance;
+            combinedStatementTotals.closingBalance  = fileTotals[0].closingBalance;
+        }
+
         if (allTransactions.length === 0) throw new Error('No transactions found in any of the uploaded files');
 
         // Sort by date, preserving the bank's natural order (ascending for Mettle, descending for all others)
         const sorted = files.length > 1 ? sortTransactions(allTransactions, ascending) : allTransactions;
         if (files.length > 1) verifyBalances(sorted);
-
-        // For multi-file batches, files may be uploaded in non-chronological order.
-        // Resolve the correct opening/closing by finding the chain endpoints:
-        //   root  = the file whose openingBalance matches no other file's closingBalance
-        //   leaf  = the file whose closingBalance matches no other file's openingBalance
-        // This is upload-order-independent and works for any set of chained monthly statements.
-        if (files.length > 1 && combinedStatementTotals && perFileTotals.length > 0) {
-            const closingSet = new Set(perFileTotals.map(t => t.closingBalance?.toFixed(2) ?? ''));
-            const openingSet = new Set(perFileTotals.map(t => t.openingBalance?.toFixed(2) ?? ''));
-            const rootFile = perFileTotals.find(t => t.openingBalance !== undefined && !closingSet.has(t.openingBalance.toFixed(2)));
-            const leafFile = perFileTotals.find(t => t.closingBalance !== undefined && !openingSet.has(t.closingBalance.toFixed(2)));
-            if (rootFile?.openingBalance !== undefined) combinedStatementTotals.openingBalance = rootFile.openingBalance;
-            else combinedStatementTotals.openingBalance = undefined;
-            if (leafFile?.closingBalance !== undefined) combinedStatementTotals.closingBalance = leafFile.closingBalance;
-            else combinedStatementTotals.closingBalance = undefined;
-        }
 
         const verification = computeVerification(sorted, combinedStatementTotals, ascending);
         if (verification) logVerificationSummary(verification);
