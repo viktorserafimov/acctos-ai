@@ -53,9 +53,6 @@ function extractFromSection(
     layout: '6col' | '5col',
     out: ParsedTransaction[],
 ): void {
-    const sectionVals = rows.flatMap(r => [...(grid.get(r)?.values() ?? [])]);
-    if (isInterestSection(sectionVals)) return;
-
     for (const r of rows) {
         const row = grid.get(r)!;
 
