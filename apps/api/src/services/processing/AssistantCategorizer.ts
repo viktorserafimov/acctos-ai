@@ -127,7 +127,7 @@ function applyFallback(items: CategorizedTransaction[], rawTransactions: object[
 const BATCH_SIZE = 25;
 const MODEL      = 'gpt-4o-mini';
 
-async function categorizeBatch(batch: object[], apiKey: string): Promise<CategorizedTransaction[]> {
+async function categorizeBatch(batch: object[], apiKey: string, attempt = 1): Promise<CategorizedTransaction[]> {
     const res = await fetch('https://api.openai.com/v1/chat/completions', {
         method: 'POST',
         headers: {
@@ -146,6 +146,13 @@ async function categorizeBatch(batch: object[], apiKey: string): Promise<Categor
     });
 
     if (!res.ok) {
+        const isRetryable = res.status === 500 || res.status === 429 || res.status === 503;
+        if (isRetryable && attempt < 3) {
+            const delay = attempt * 2000;
+            console.warn(`[Categorizer] OpenAI error ${res.status} — retrying in ${delay}ms (attempt ${attempt}/3)`);
+            await new Promise(r => setTimeout(r, delay));
+            return categorizeBatch(batch, apiKey, attempt + 1);
+        }
         const err = await res.text();
         throw new Error(`OpenAI API error ${res.status}: ${err}`);
     }
