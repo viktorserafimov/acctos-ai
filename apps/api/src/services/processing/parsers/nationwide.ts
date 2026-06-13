@@ -46,7 +46,7 @@ function detectCols(row: Map<number, string>): { dateCol: number; descCol: numbe
     for (const [c, v] of row) {
         const lo = normStr(v).toLowerCase();
         if (lo === 'date')                                                         dateCol = c;
-        else if (lo === 'description')                                             descCol = c;
+        else if (lo === 'description' || lo.startsWith('payment type'))            descCol = c;
         else if (lo.includes('out'))                                               outCol  = c;
         else if (lo.includes('balance'))                                           balCol  = c;
         else if (lo.includes('in') && !lo.includes('description') && lo !== '£in') inCol  = c;
@@ -64,6 +64,10 @@ function amt(s: string): string {
     return n !== null && n !== 0 ? formatMoney(n) : '';
 }
 
+// Nationwide page headers can appear mid-grid when Azure DI shifts columns.
+// Any row containing these labels must be skipped entirely.
+const PAGE_HEADER_RE = /\b(account\s*(no|number)|statement\s*(no|number|date)|sort\s+code|account\s+holder|account\s+name)\b/i;
+
 export function parse(cells: Cell[]): ParseResult {
     const grid = buildGrid(cells);
     const sortedRows = [...grid.keys()].filter(r => r >= 0).sort((a, b) => a - b);
@@ -74,13 +78,25 @@ export function parse(cells: Cell[]): ParseResult {
     let currentYear = '';
     let currentDate = '';
     let current: ParsedTransaction | null = null;
+    let openingBalance: number | null = null;
+
+    // Pre-scan for "Account Summary" section (business format) to capture opening balance.
+    // Looks for a row where col 0 is "Opening Balance" and col 1 is a number.
+    for (const r of sortedRows) {
+        const row = grid.get(r)!;
+        const c0 = normStr(row.get(0) ?? '').toLowerCase();
+        if (c0 === 'opening balance' || c0 === 'balance brought forward') {
+            const n = parseMoney(normStr(row.get(1) ?? ''));
+            if (n !== null) { openingBalance = n; break; }
+        }
+    }
 
     // Default column positions (most pages use 0-4); updated whenever a header row is found.
     let dateCol = 0, descCol = 1, outCol = 2, inCol = 3, balCol = 4;
 
     function flush() {
         if (!current) return;
-        if ((current.moneyIn || current.moneyOut) && current.description) {
+        if (current.moneyIn || current.moneyOut) {
             transactions.push(current);
         }
         current = null;
@@ -88,6 +104,10 @@ export function parse(cells: Cell[]): ParseResult {
 
     for (const r of sortedRows) {
         const row = grid.get(r)!;
+
+        // Skip page-header rows regardless of column position (Azure DI can shift columns)
+        const rawRowText = [...row.values()].join(' ');
+        if (PAGE_HEADER_RE.test(rawRowText)) continue;
 
         const cols = detectCols(row);
         if (cols) {
@@ -99,13 +119,26 @@ export function parse(cells: Cell[]): ParseResult {
 
         const dateCell = normStr(row.get(dateCol) ?? '');
         const descCell = normStr(row.get(descCol) ?? '');
+        // When outCol > descCol+1, there is an extra details column between desc and out
+        // (e.g. business current account: col1=payment-type, col2=merchant, col3=paid-out).
+        // Merge both text cells into a single description.
+        const descExtra = outCol > descCol + 1 ? normStr(row.get(descCol + 1) ?? '') : '';
+        const descFull  = [descCell, descExtra].filter(Boolean).join(' ');
         const outCell  = normStr(row.get(outCol) ?? '');
         const inCell   = normStr(row.get(inCol) ?? '');
         const balCell  = normStr(row.get(balCol) ?? '');
 
-        // Standalone year row → update tracker, do not start a transaction
+        // Standalone year row → update tracker, do not start a transaction.
+        // If the description reads "Balance from statement", capture the opening balance.
         if (isYearOnly(dateCell)) {
             currentYear = dateCell;
+            if (openingBalance === null) {
+                const desc = normStr(row.get(descCol) ?? '');
+                if (/balance\s+from\s+statement/i.test(desc)) {
+                    const n = parseMoney(normStr(row.get(balCol) ?? ''));
+                    if (n !== null) openingBalance = n;
+                }
+            }
             continue;
         }
 
@@ -122,7 +155,7 @@ export function parse(cells: Cell[]): ParseResult {
         })();
         if (parsedDate) currentDate = parsedDate;
 
-        const hasAny = !!(dateCell || descCell || hasAmount || balance);
+        const hasAny = !!(dateCell || descFull || hasAmount || balance);
         if (!hasAny) continue;
 
         // Start a new transaction only when we have a proper date OR an amount on an already-dated row.
@@ -134,18 +167,34 @@ export function parse(cells: Cell[]): ParseResult {
             current = {
                 date: currentDate,
                 type: '',
-                description: descCell,
+                description: descFull,
                 moneyOut,
                 moneyIn,
                 balance,
             };
         } else if (current) {
             // Continuation row: no date, no amount → append description, maybe fill balance
-            if (descCell) current.description = normStr(`${current.description} ${descCell}`);
+            if (descFull) current.description = normStr(`${current.description} ${descFull}`);
             if (balance && !current.balance) current.balance = balance;
         }
     }
 
     flush();
-    return { transactions, ascending: true };
+
+    // Derive closing balance from the last transaction that has a balance value
+    let closingBalance: number | null = null;
+    for (let i = transactions.length - 1; i >= 0; i--) {
+        const n = parseMoney(transactions[i].balance);
+        if (n !== null) { closingBalance = n; break; }
+    }
+
+    const hasTotals = openingBalance !== null || closingBalance !== null;
+    const statementTotals = hasTotals ? {
+        moneyIn:  transactions.reduce((s, t) => s + (parseMoney(t.moneyIn)  ?? 0), 0),
+        moneyOut: transactions.reduce((s, t) => s + (parseMoney(t.moneyOut) ?? 0), 0),
+        ...(openingBalance !== null && { openingBalance }),
+        ...(closingBalance !== null && { closingBalance }),
+    } : undefined;
+
+    return { transactions, statementTotals, ascending: true };
 }
