@@ -89,16 +89,26 @@ export function parse(cells: Cell[]): ParseResult {
 
     if (!table.length) return { transactions: [] };
 
-    const hasHeader = isHeaderRow(table[0].cols);
-    const startAt   = hasHeader ? 1 : 0;
+    // When the full PDF is uploaded, page 1 may produce Azure DI cells from the
+    // Revolut Business banner/company header BEFORE the transaction table. Those
+    // non-table rows push the actual column header down from table[0].
+    // Scan the first 10 rows to locate the real header row.
+    let headerIdx = -1;
+    for (let i = 0; i < Math.min(table.length, 10); i++) {
+        if (isHeaderRow(table[i].cols)) { headerIdx = i; break; }
+    }
+    const hasHeader = headerIdx >= 0;
+    const startAt   = hasHeader ? headerIdx + 1 : 0;
+    const headerRow = hasHeader ? table[headerIdx].cols : table[0].cols;
+    console.log(`[RevolutParser] cols=${cols} headerIdx=${headerIdx} table[0]=${JSON.stringify(table[0]?.cols?.slice(0,4))} header=${JSON.stringify(headerRow.slice(0,4))}`);
     const isSixCols  = cols === 5;
     const isFiveCols = cols === 4;
 
     const transactions: ParsedTransaction[] = [];
 
     // ── 5-col in/out: [date, desc, out, in, balance] ─────────────────────────
-    if (isFiveCols && hasHeader && isInOut5Header(table[0].cols)) {
-        for (let i = 1; i < table.length; i++) {
+    if (isFiveCols && hasHeader && isInOut5Header(headerRow)) {
+        for (let i = startAt; i < table.length; i++) {
             const c = table[i].cols;
             const date = parseDateToDDMMYYYY(c[0]);
             if (!date) continue;
@@ -131,11 +141,8 @@ export function parse(cells: Cell[]): ParseResult {
     // Azure DI column positions vary across pages, so for each row we scan
     // right-to-left from col 6→3 for the first parseable £ amount, then use
     // the type code (IN_CODES/OUT_CODES) + "from" keyword for direction.
-    if (hasHeader && isTransactionStatement(table[0].cols)) {
-        // Collect transactions with their absolute row index for cross-page dedup
-        const txRows: Array<{ t: ParsedTransaction; rowIndex: number }> = [];
-
-        for (let i = 1; i < table.length; i++) {
+    if (hasHeader && isTransactionStatement(headerRow)) {
+        for (let i = startAt; i < table.length; i++) {
             const c = table[i].cols;
             const date = parseDateToDDMMYYYY(c[0]);
             if (!date) continue;
@@ -171,22 +178,9 @@ export function parse(cells: Cell[]): ParseResult {
                 moneyOut = formatMoney(amt);
             }
 
-            txRows.push({ t: { date, type, description: desc, moneyIn, moneyOut, balance: '' }, rowIndex: table[i].rowIndex });
+            transactions.push({ date, type, description: desc, moneyIn, moneyOut, balance: '' });
         }
-
-        // De-dup: Azure DI sometimes repeats the last row of page N as the first row of page N+1.
-        // Row-index gaps > 5000 indicate different pages (merge offset is +10000 per page).
-        // Keep the first occurrence; skip any re-appearance from a different page.
-        const seenKeys = new Map<string, number>(); // key → rowIndex where first seen
-        for (const { t, rowIndex } of txRows) {
-            const key = [t.date, t.type, t.description, t.moneyIn, t.moneyOut].join('|');
-            const prevIdx = seenKeys.get(key);
-            if (prevIdx !== undefined && rowIndex - prevIdx > 5000) continue; // cross-page dup
-            seenKeys.set(key, rowIndex);
-            transactions.push(t);
-        }
-
-        return { transactions, ascending: false };
+        return { transactions };
     }
 
     // ── 6-col and legacy 5-col ────────────────────────────────────────────────
