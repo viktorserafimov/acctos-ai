@@ -2,7 +2,7 @@ export type BankType =
     | 'hsbc' | 'revolut' | 'monzo' | 'wise' | 'starling'
     | 'natwest' | 'mettle' | 'nationwide' | 'santander' | 'barclays' | 'barclaycard' | 'metro'
     | 'lloyds' | 'tsb' | 'tide' | 'rbs' | 'virginmoney' | 'pockit' | 'zempler' | 'countingup'
-    | 'halifax'
+    | 'halifax' | 'anna'
     | 'generic';
 
 export type DocType = 'bank_statement' | 'vat';
@@ -62,6 +62,7 @@ function detectBank(lower: string): BankType {
     if (lower.includes('lloyds'))                                 return 'lloyds';
     if (lower.includes('tsb'))                                    return 'tsb';
     if (lower.includes('tide'))                                   return 'tide';
+    if (lower.includes('anna'))                                   return 'anna';
     return 'generic';
 }
 
@@ -96,6 +97,10 @@ export function detectBankFromContent(text: string): BankType {
     // that lack the specific header markers above will still be caught by the fallback on line 101.
     if (/\bsantander\b/.test(t))                                     return 'santander';
     if (/\bnationwide\s+building\s+society\b/.test(t))               return 'nationwide';
+    // Revolut before broad bank-name sweeps — Revolut Business PDFs can contain "nationwide"
+    // or "starling" in transaction descriptions (e.g. "Nationwide ATM withdrawal"), which
+    // would otherwise trigger a false match for those banks further down the list.
+    if (/\brevolut\b/.test(t))                                       return 'revolut';
     if (/\blloyds\s+bank\b/.test(t))                                 return 'lloyds';
     if (/\bhsbc\b/.test(t))                                          return 'hsbc';
     if (/\bmonzo\b/.test(t))                                         return 'monzo';
@@ -108,8 +113,9 @@ export function detectBankFromContent(text: string): BankType {
     if (/\bbarclaycard\b/i.test(t))                                  return 'barclaycard';
     if (/\bbarclays\b/.test(t))                                      return 'barclays';
     if (/\btsb\b/.test(t) || /203\s*284\s*1576/.test(t))            return 'tsb';
-    if (/\brevolut\b/.test(t))                                       return 'revolut';
     if (/\blloyds\b/.test(t))                                        return 'lloyds';
+    // ANNA Money — Payrnet is ANNA's banking institution, unique to their statements
+    if (t.includes('payrnet') || /\banna\s+(?:business|money|subscription)\b/.test(t)) return 'anna';
     return 'generic';
 }
 
