@@ -689,6 +689,17 @@ export function parse(cells: Cell[]): ParseResult {
             currentTxn = { date: currentDate, type: codeHit.code, description: '', moneyOut: '', moneyIn: '', balance: '' };
         }
 
+        // A date-bearing row with no code is a transaction whose code was omitted by
+        // HSBC/Azure DI — typically the very first entry after "BALANCE BROUGHT FORWARD"
+        // where the ))) contactless marker is absent. Start an implicit transaction so
+        // the description and the amount on the next continuation row are captured.
+        if (!currentTxn && !codeHit) {
+            const descInC2 = (row.c2 || '').trim();
+            if (dateMatch && descInC2 && !isAmount(descInC2) && !SKIP_DESC_EXACT_RE.test(descInC2) && !CARRIED_FORWARD_RE.test(descInC2)) {
+                currentTxn = { date: currentDate, type: '', description: '', moneyOut: '', moneyIn: '', balance: '' };
+            }
+        }
+
         if (!currentTxn) continue;
 
         // Implicit transaction split: a continuation row (no code) that carries its own
@@ -706,7 +717,13 @@ export function parse(cells: Cell[]): ParseResult {
             // (e.g. rows where Azure DI put the merchant name in c1 with no code prefix).
             const descCand  = iC2 || iC1;
             const hasDesc   = !!descCand && !isAmount(descCand) && !SKIP_DESC_EXACT_RE.test(descCand) && !CARRIED_FORWARD_RE.test(descCand);
-            const isFeeRow  = /\btransaction fee\b|\bnon-sterling\b/i.test(descCand);
+            // isFeeRow: only suppress the implicit split when the fee description has NO amount of
+            // its own (it is just labelling text on a continuation row). When a fee row carries its
+            // own amount (e.g. "DR Non-Sterling Transaction Fee £10.02" as a standalone continuation
+            // with c3="10.02"), it IS a real separate transaction and must be split out — otherwise
+            // the fee amount is silently lost because applyAmountsToTxnFromRow skips it once the
+            // current transaction already has a moneyOut value.
+            const isFeeRow  = !hasNewAmt && /\btransaction fee\b|\bnon-sterling\b/i.test(descCand);
             if (hasNewAmt && hasDesc && !isFeeRow) {
                 // If ))) appears in the middle of the accumulated description it marks where
                 // the second merchant begins (Azure DI merged two contactless rows into one
