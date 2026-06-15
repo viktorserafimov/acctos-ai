@@ -266,25 +266,42 @@ export function parse(cells: Cell[]): ParseResult {
     const yrState: YearState = { rollingYear: stmtYear, prevMonth: null, hasRolled: false };
 
     // ── Column detection ───────────────────────────────────────────────────────
+    // Search ALL rows for the best transaction-table header. Score each candidate:
+    //   +1 for Date, +1 for Description, +2 for Money in, +2 for Money out, +1 for Balance.
+    // This handles statements where a cover/interest page precedes the real table, so the
+    // correct header is on page 2 (row index ~10000+) rather than page 1.
     let dateCol = 0, descCol = 2;
     let inCol: number | null = null, outCol: number | null = null, balCol: number | null = null;
     let headerRow = -1;
+    let bestHeaderScore = 0;
 
-    for (let r = 0; r <= Math.min(5, rows); r++) {
+    for (let r = 0; r <= rows; r++) {
         const row = grid.get(r);
         if (!row) continue;
         const joined = [...row.values()].join(' ').toLowerCase();
         if (!joined.includes('date') && !joined.includes('description')) continue;
-        headerRow = r;
+
+        let score = 0;
+        let tDateCol = 0, tDescCol = 2;
+        let tInCol: number | null = null, tOutCol: number | null = null, tBalCol: number | null = null;
+
         for (const [c, v] of row) {
             const lo = v.toLowerCase();
-            if (/^date$/.test(lo) || (lo.includes('date') && c <= 1)) dateCol = c;
-            else if (/\bdescription\b/.test(lo)) descCol = c;
-            else if (/^money\s*in$/.test(lo) || /^credits?$/.test(lo)) inCol = c;
-            else if (/^money\s*out$/.test(lo) || /^debits?$/.test(lo)) outCol = c;
-            else if (/^£?\s*balance$/.test(lo)) balCol = c;
+            if (/^date$/.test(lo) || (lo.includes('date') && c <= 1)) { score += 1; tDateCol = c; }
+            else if (/\bdescription\b/.test(lo)) { score += 1; tDescCol = c; }
+            else if (/^money\s*in$/.test(lo) || /^credits?$/.test(lo)) { score += 2; tInCol = c; }
+            else if (/^money\s*out$/.test(lo) || /^debits?$/.test(lo)) { score += 2; tOutCol = c; }
+            else if (/^£?\s*balance$/.test(lo)) { score += 1; tBalCol = c; }
         }
-        break;
+
+        if (score > bestHeaderScore) {
+            bestHeaderScore = score;
+            headerRow = r;
+            dateCol = tDateCol; descCol = tDescCol;
+            inCol = tInCol; outCol = tOutCol; balCol = tBalCol;
+        }
+        // Perfect header (all money columns found) — stop searching
+        if (tInCol !== null && tOutCol !== null && tBalCol !== null) break;
     }
 
     const startRow = headerRow >= 0 ? headerRow + 1 : 0;
@@ -341,20 +358,18 @@ export function parse(cells: Cell[]): ParseResult {
         }
 
         // ── Money columns — per-row layout detection ──────────────────────────
-        // Santander online banking can have two table layouts depending on whether
-        // Azure DI merged the "Money In" column into "Description" on that page:
-        //   maxC >= 4 → 5-col  (Date | Desc | MoneyIn | MoneyOut | Balance)
-        //   maxC == 3 → 4-col  (Date | Desc+MoneyIn merged | MoneyOut | Balance)
-        //   maxC == 2 → 3-col  (Date | Desc | MoneyOut or Balance — rare)
-        //
-        // On 4-col pages incoming transactions appear in two variants:
-        //   a) col1 = "FASTER PAYMENTS RECEIPT £1,936.00 REF..." — amount embedded in description
-        //   b) col1 = "£2,112.00" alone — amount in col1, description split to next row (page break)
+        // When the header scan found explicit Money in/out column indices, use them
+        // directly (handles 6-col statements: Date|Type|Desc|MoneyIn|MoneyOut|Balance).
+        // Otherwise fall back to heuristics based on column count.
         let inRaw  = '';
         let outRaw = '';
         let bRaw   = '';
 
-        if (maxC >= 4) {
+        if (inCol !== null && outCol !== null) {
+            inRaw  = v[inCol]  ?? '';
+            outRaw = v[outCol] ?? '';
+            bRaw   = balCol !== null ? (v[balCol] ?? '') : '';
+        } else if (maxC >= 4) {
             inRaw  = v[2] ?? '';
             outRaw = v[3] ?? '';
             bRaw   = v[4] ?? '';

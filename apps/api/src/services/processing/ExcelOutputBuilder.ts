@@ -6,6 +6,7 @@ import { fileURLToPath } from 'url';
 import { CategorizedTransaction } from './AssistantCategorizer.js';
 import { ExcelTransaction } from './ExcelParser.js';
 import { VerificationSummary } from './Verification.js';
+import { FileSummary } from './JobStore.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const TEMPLATE_PATH = join(__dirname, 'template-bank-statement.xlsx');
@@ -100,7 +101,86 @@ function toNum(v: unknown): number | null {
     return isFinite(n) && n !== 0 ? n : null;
 }
 
-export async function buildPdfOutputExcel(transactions: CategorizedTransaction[], verification?: VerificationSummary): Promise<Buffer> {
+function addFileSummarySheet(workbook: ExcelJS.Workbook, files: FileSummary[]): void {
+    const ws = workbook.addWorksheet('Files');
+
+    const HEADER_FILL: ExcelJS.Fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF2D5E8B' } };
+    const OK_FILL:     ExcelJS.Fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFD6F5D6' } };
+    const WARN_FILL:   ExcelJS.Fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFF3CD' } };
+    const ERR_FILL:    ExcelJS.Fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFC7CE' } };
+
+    const cols = [
+        { header: 'File',              key: 'filename',      width: 42 },
+        { header: 'Txns',              key: 'transactions',  width: 7  },
+        { header: 'Parsed In',         key: 'parsedIn',      width: 13 },
+        { header: 'Parsed Out',        key: 'parsedOut',     width: 13 },
+        { header: 'Declared In',       key: 'declaredIn',    width: 13 },
+        { header: 'Declared Out',      key: 'declaredOut',   width: 13 },
+        { header: 'Opening Bal',       key: 'openingBalance',width: 13 },
+        { header: 'Closing Bal',       key: 'closingBalance',width: 13 },
+        { header: 'In diff',           key: 'inDiff',        width: 10 },
+        { header: 'Out diff',          key: 'outDiff',       width: 10 },
+        { header: 'Status',            key: 'status',        width: 22 },
+    ];
+    ws.columns = cols;
+
+    // Header row styling
+    const hdr = ws.getRow(1);
+    cols.forEach((_, i) => {
+        const c = hdr.getCell(i + 1);
+        c.fill = HEADER_FILL;
+        c.font = { bold: true, color: { argb: 'FFFFFFFF' } };
+        c.alignment = { horizontal: 'center' };
+    });
+    hdr.commit();
+
+    const almostEqual = (a: number, b: number) => Math.abs(a - b) < 0.02;
+
+    files.forEach((f, idx) => {
+        const row = ws.getRow(idx + 2);
+        const hasDeclared = f.declaredIn != null && f.declaredOut != null;
+        const inDiff  = hasDeclared ? Math.round((f.parsedIn  - f.declaredIn!)  * 100) / 100 : null;
+        const outDiff = hasDeclared ? Math.round((f.parsedOut - f.declaredOut!) * 100) / 100 : null;
+        const ok      = !hasDeclared ? null : (almostEqual(inDiff!, 0) && almostEqual(outDiff!, 0));
+        const status  = ok === null ? '— no declared totals' : ok ? '✓ Match' : `⚠ Mismatch`;
+        const rowFill = ok === null ? undefined : ok ? OK_FILL : (Math.abs(inDiff!) > 1 || Math.abs(outDiff!) > 1 ? ERR_FILL : WARN_FILL);
+
+        row.getCell(1).value  = f.filename;
+        row.getCell(2).value  = f.transactions;
+        row.getCell(3).value  = f.parsedIn;   row.getCell(3).numFmt = MONEY_FMT;
+        row.getCell(4).value  = f.parsedOut;  row.getCell(4).numFmt = MONEY_FMT;
+        if (f.declaredIn  != null) { row.getCell(5).value = f.declaredIn;  row.getCell(5).numFmt = MONEY_FMT; }
+        if (f.declaredOut != null) { row.getCell(6).value = f.declaredOut; row.getCell(6).numFmt = MONEY_FMT; }
+        if (f.openingBalance != null) { row.getCell(7).value = f.openingBalance; row.getCell(7).numFmt = MONEY_FMT; }
+        if (f.closingBalance != null) { row.getCell(8).value = f.closingBalance; row.getCell(8).numFmt = MONEY_FMT; }
+        if (inDiff  != null) { row.getCell(9).value  = inDiff;  row.getCell(9).numFmt  = MONEY_FMT; }
+        if (outDiff != null) { row.getCell(10).value = outDiff; row.getCell(10).numFmt = MONEY_FMT; }
+        row.getCell(11).value = status;
+        row.getCell(11).font  = { bold: ok === false };
+
+        if (rowFill) {
+            for (let c = 1; c <= cols.length; c++) row.getCell(c).fill = rowFill;
+        }
+        row.commit();
+    });
+
+    // Totals row
+    const totRow = ws.getRow(files.length + 2);
+    totRow.getCell(1).value = 'TOTAL';
+    totRow.getCell(1).font  = { bold: true };
+    const sumIn   = files.reduce((s, f) => s + f.parsedIn,  0);
+    const sumOut  = files.reduce((s, f) => s + f.parsedOut, 0);
+    const sumTxns = files.reduce((s, f) => s + f.transactions, 0);
+    totRow.getCell(2).value = sumTxns;
+    totRow.getCell(3).value = Math.round(sumIn  * 100) / 100; totRow.getCell(3).numFmt = MONEY_FMT;
+    totRow.getCell(4).value = Math.round(sumOut * 100) / 100; totRow.getCell(4).numFmt = MONEY_FMT;
+    for (let c = 1; c <= cols.length; c++) totRow.getCell(c).font = { bold: true };
+    totRow.commit();
+
+    ws.views = [{ state: 'frozen', xSplit: 0, ySplit: 1, topLeftCell: 'A2' }];
+}
+
+export async function buildPdfOutputExcel(transactions: CategorizedTransaction[], verification?: VerificationSummary, fileSummaries?: FileSummary[]): Promise<Buffer> {
     const templateBuf = readFileSync(TEMPLATE_PATH);
 
     const workbook = new ExcelJS.Workbook();
@@ -174,6 +254,11 @@ export async function buildPdfOutputExcel(transactions: CategorizedTransaction[]
     // Verification summary: placed to the right of the table (cols 19-20), no background colours
     if (verification) {
         addVerificationSide(ws, verification);
+    }
+
+    // Per-file summary sheet (only when multiple files were processed)
+    if (fileSummaries && fileSummaries.length > 0) {
+        addFileSummarySheet(workbook, fileSummaries);
     }
 
     // Freeze first 2 rows

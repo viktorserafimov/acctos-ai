@@ -1,7 +1,7 @@
 import { randomUUID, createHash } from 'crypto';
 import { PrismaClient } from '@prisma/client';
 import { PrismaClientKnownRequestError } from '@prisma/client/runtime/library';
-import { jobStore } from './JobStore.js';
+import { jobStore, FileSummary } from './JobStore.js';
 import { classify, detectBankFromContent, BankType } from './DocumentClassifier.js';
 import { splitPdf } from './PdfSplitter.js';
 import { analyzePages } from './AzureExtractor.js';
@@ -36,6 +36,7 @@ import { parse as parseMettle } from './parsers/mettle.js';
 import { parse as parseBarclaycard } from './parsers/barclaycard.js';
 import { parse as parseZempler } from './parsers/zempler.js';
 import { parse as parseCountingup } from './parsers/countingup.js';
+import { parse as parseAnna } from './parsers/anna.js';
 import { parse as parseGeneric } from './parsers/generic.js';
 import { parse as parseFallback } from './parsers/fallback.js';
 
@@ -62,6 +63,7 @@ function getParser(bankType: BankType): StandardParser {
         case 'lloyds':     return parseLloyds;
         case 'tsb':        return parseTsb;
         case 'tide':       return parseTide;
+        case 'anna':       return parseAnna;
         default:           return parseGeneric;
     }
 }
@@ -237,6 +239,7 @@ async function runBatchJob(jobId: string, files: FileInput[], tracking?: Trackin
         if (confirmedBankType) console.log(`[Orchestrator] Bank hint applied: ${confirmedBankType}`);
         let combinedStatementTotals: { moneyIn: number; moneyOut: number; openingBalance?: number; closingBalance?: number } | undefined;
         const fileTotals: Array<{ moneyIn: number; moneyOut: number; openingBalance?: number; closingBalance?: number }> = [];
+        const fileSummaries: FileSummary[] = [];
         let ascending = false;
 
         for (let fi = 0; fi < files.length; fi++) {
@@ -324,6 +327,20 @@ async function runBatchJob(jobId: string, files: FileInput[], tracking?: Trackin
             const { transactions: fileTransactions, statementTotals, ascending: fileAscending } = await parseAllCells(pageCells, bankType);
             if (fileAscending) ascending = true;
             console.log(`[Orchestrator] File ${fi + 1}/${files.length} "${filename}": ${fileTransactions.length} transactions`);
+
+            // Per-file summary for the output Excel "Files" sheet
+            const parsedInFile  = Math.round(fileTransactions.reduce((s, t) => s + (parseFloat((t.moneyIn  || '0').replace(/,/g, '')) || 0), 0) * 100) / 100;
+            const parsedOutFile = Math.round(fileTransactions.reduce((s, t) => s + (parseFloat((t.moneyOut || '0').replace(/,/g, '')) || 0), 0) * 100) / 100;
+            fileSummaries.push({
+                filename,
+                transactions: fileTransactions.length,
+                parsedIn:  parsedInFile,
+                parsedOut: parsedOutFile,
+                declaredIn:     statementTotals?.moneyIn,
+                declaredOut:    statementTotals?.moneyOut,
+                openingBalance: statementTotals?.openingBalance,
+                closingBalance: statementTotals?.closingBalance,
+            });
             if (statementTotals) {
                 fileTotals.push(statementTotals);
                 if (!combinedStatementTotals) {
@@ -371,7 +388,7 @@ async function runBatchJob(jobId: string, files: FileInput[], tracking?: Trackin
         if (verification) logVerificationSummary(verification);
         jobStore.update(jobId, { transactionCount: categorized.length, currentStage: 'output' });
 
-        const outputBuffer = await buildPdfOutputExcel(categorized, verification);
+        const outputBuffer = await buildPdfOutputExcel(categorized, verification, fileSummaries.length > 1 ? fileSummaries : undefined);
         jobStore.update(jobId, { status: 'completed', outputBuffer, completedAt: new Date() });
         console.log(`[Orchestrator] Batch job ${jobId} completed — ${allTransactions.length} transactions from ${files.length} file(s)`);
 

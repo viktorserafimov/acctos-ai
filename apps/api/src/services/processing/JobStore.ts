@@ -1,6 +1,17 @@
 export type JobStatus = 'queued' | 'processing' | 'completed' | 'failed';
 export type ProcessingStage = 'classify' | 'extract' | 'parse' | 'categorize' | 'output';
 
+export interface FileSummary {
+    filename: string;
+    transactions: number;
+    parsedIn: number;
+    parsedOut: number;
+    declaredIn?: number;
+    declaredOut?: number;
+    openingBalance?: number;
+    closingBalance?: number;
+}
+
 export interface ProcessingJob {
     id: string;
     status: JobStatus;
