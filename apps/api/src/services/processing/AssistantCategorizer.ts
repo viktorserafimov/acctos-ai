@@ -148,6 +148,12 @@ async function fetchCompletion(batch: object[], apiKey: string, attempt = 0): Pr
 
     if (!res.ok && attempt < MAX_RETRIES) {
         if (res.status === 429) {
+            // Read body to distinguish quota exhaustion from rate limiting
+            const body = await res.clone().json().catch(() => ({})) as any;
+            const code = body?.error?.code as string | undefined;
+            if (code === 'insufficient_quota') {
+                throw new Error('OpenAI quota exhausted — account has no remaining credits. Please top up at platform.openai.com/billing.');
+            }
             // Rate limited — respect Retry-After header or use exponential backoff
             const retryAfter = Number(res.headers.get('retry-after') || '0');
             const waitMs = retryAfter > 0 ? retryAfter * 1000 : Math.min(60000 * (attempt + 1), 120000);
