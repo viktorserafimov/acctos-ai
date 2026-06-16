@@ -2,7 +2,7 @@ export type BankType =
     | 'hsbc' | 'revolut' | 'monzo' | 'wise' | 'starling'
     | 'natwest' | 'mettle' | 'nationwide' | 'santander' | 'barclays' | 'barclaycard' | 'metro'
     | 'lloyds' | 'tsb' | 'tide' | 'rbs' | 'virginmoney' | 'pockit' | 'zempler' | 'countingup'
-    | 'halifax'
+    | 'halifax' | 'anna'
     | 'generic';
 
 export type DocType = 'bank_statement' | 'vat';
@@ -62,6 +62,7 @@ function detectBank(lower: string): BankType {
     if (lower.includes('lloyds'))                                 return 'lloyds';
     if (lower.includes('tsb'))                                    return 'tsb';
     if (lower.includes('tide'))                                   return 'tide';
+    if (lower.includes('anna'))                                   return 'anna';
     return 'generic';
 }
 
@@ -104,6 +105,8 @@ export function detectBankFromContent(text: string): BankType {
     if (/\btsb\b/.test(t) || /203\s*284\s*1576/.test(t))            return 'tsb';
     if (/\brevolut\b/.test(t))                                       return 'revolut';
     if (/\blloyds\b/.test(t))                                        return 'lloyds';
+    // ANNA Money — Payrnet is ANNA's banking institution, unique to their statements
+    if (t.includes('payrnet') || /\banna\s+(?:business|money|subscription)\b/.test(t)) return 'anna';
     return 'generic';
 }
 

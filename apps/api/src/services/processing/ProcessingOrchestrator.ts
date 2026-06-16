@@ -36,6 +36,7 @@ import { parse as parseMettle } from './parsers/mettle.js';
 import { parse as parseBarclaycard } from './parsers/barclaycard.js';
 import { parse as parseZempler } from './parsers/zempler.js';
 import { parse as parseCountingup } from './parsers/countingup.js';
+import { parse as parseAnna } from './parsers/anna.js';
 import { parse as parseGeneric } from './parsers/generic.js';
 import { parse as parseFallback } from './parsers/fallback.js';
 
@@ -58,6 +59,7 @@ function getParser(bankType: BankType): StandardParser {
         case 'barclaycard': return parseBarclaycard;
         case 'zempler':    return parseZempler;
         case 'countingup': return parseCountingup;
+        case 'anna':       return parseAnna;
         case 'metro':      return parseMetro;
         case 'lloyds':     return parseLloyds;
         case 'tsb':        return parseTsb;
