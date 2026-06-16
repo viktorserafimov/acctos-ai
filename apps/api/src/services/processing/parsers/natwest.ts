@@ -1,4 +1,4 @@
-// NatWest parser — 6-col (Details/Withdrawn/Paid In) and 4-col (Description/Amount) variants
+// NatWest parser — 6-col (Details/Withdrawn/Paid In), 5-col (Description/PaidIn/Withdrawn/Bal), and 4-col (Description/Amount) variants
 // Adapted from Make scenarios 1.5.4, modules 1326 + 1333
 import {
     Cell, ParsedTransaction, ParseResult,
@@ -117,47 +117,56 @@ export function parse(cells: Cell[]): ParseResult {
     let dateCol = 0, d1Col = 1, d2Col = -1, typeCol = -1;
     let outCol = -1, inCol = -1, amountCol = -1, balCol = -1, odCol = -1;
 
-    if (header) {
+    // Detect column layout from a header row — called initially and again on each
+    // repeated page header so per-page layout changes are handled correctly.
+    function detectLayout(hdr: Map<number, string>): void {
+        is6col = false;
+        dateCol = 0; d1Col = 1; d2Col = -1; typeCol = -1;
+        outCol = -1; inCol = -1; amountCol = -1; balCol = -1; odCol = -1;
+
         let hasDetails = false, hasWithdrawn = false, hasPaidIn = false;
         let detailCount = 0;
 
-        for (const [c, v] of header) {
+        for (const [c, v] of hdr) {
             const lo = normStr(v).toLowerCase();
-            if (lo === 'date' || lo.startsWith('date '))                                      dateCol = c;
+            if (lo === 'date' || lo.startsWith('date '))                                          dateCol = c;
             else if (lo.includes('detail')) { hasDetails = true; detailCount++; if (detailCount === 1) d1Col = c; else d2Col = c; }
-            else if (lo.includes('desc') || lo.includes('narrat'))                            d1Col = c;
-            else if (lo === 'type' || lo.startsWith('type '))                                 typeCol = c;
+            else if (lo.includes('desc') || lo.includes('narrat'))                                d1Col = c;
+            else if (lo === 'type' || lo.startsWith('type '))                                     typeCol = c;
             else if (lo.includes('withdrawn') || lo.includes('paid out') || lo.includes('debit')) { hasWithdrawn = true; outCol = c; }
-            else if (lo === 'od')                                                              odCol = c;
-            else if (lo.includes('paid in') || lo.includes('credit'))                        { hasPaidIn = true; inCol = c; }
-            else if (lo.includes('amount') && !lo.includes('bal'))                           amountCol = c;
-            else if (lo.includes('bal'))                                                      balCol = c;
+            else if (lo === 'od')                                                                  odCol = c;
+            else if (lo.includes('paid in') || lo.includes('credit'))                            { hasPaidIn = true; inCol = c; }
+            else if (lo.includes('amount') && !lo.includes('bal'))                               amountCol = c;
+            else if (lo.includes('bal'))                                                          balCol = c;
         }
 
-        if (balCol === -1) balCol = Math.max(...header.keys());
-        // If the highest column is an amount column there is no balance column
+        if (balCol === -1) balCol = Math.max(...hdr.keys());
         if (balCol === outCol || balCol === inCol) balCol = -1;
         is6col = hasDetails && hasWithdrawn && hasPaidIn;
 
-        // Blank D2 column: gap between d1Col and outCol in the 6-col layout
         if (is6col && d2Col === -1 && outCol > d1Col + 1) d2Col = d1Col + 1;
 
-        // Merged "Paid In(£) Withdrawn(£)" column — Azure DI collapsed both into one cell.
-        // The else-if chain above only sets outCol (withdrawn matches first), leaving inCol=-1.
-        // Detect by checking whether the outCol header text also contains "paid in" / "credit".
-        // Treat as a single amount column and use balance delta to determine direction.
+        // Merged "Paid In(£) Withdrawn(£)" — Azure DI sometimes splits this across two cells:
+        // c1="Description Paid" (matches desc → d1Col) and c2="In(£) Withdrawn(£)" (matches withdrawn → outCol).
+        // The combined text of the adjacent cell and outCol reveals "paid in", so check both.
         if (!is6col && outCol >= 0 && inCol < 0) {
-            const outColText = normStr(header.get(outCol) ?? '').toLowerCase();
-            if (outColText.includes('paid in') || outColText.includes('credit')) {
+            const outColText  = normStr(hdr.get(outCol) ?? '').toLowerCase();
+            const prevColText = outCol > 0 ? normStr(hdr.get(outCol - 1) ?? '').toLowerCase() : '';
+            const combined    = prevColText + ' ' + outColText;
+            if (outColText.includes('paid in') || outColText.includes('credit') ||
+                combined.includes('paid in')) {
                 amountCol = outCol;
                 outCol    = -1;
             }
         }
 
-        // 4-col single-amount fallback when no amount/in/out columns found
         if (!is6col && inCol === -1 && outCol === -1 && amountCol === -1) {
             amountCol = balCol > 2 ? balCol - 1 : 2;
         }
+    }
+
+    if (header) {
+        detectLayout(header);
     } else {
         amountCol = 2;
         balCol = 3;
@@ -191,8 +200,8 @@ export function parse(cells: Cell[]): ParseResult {
         const row = grid.get(r);
         if (!row) continue;
 
-        // Skip repeated header rows from subsequent pages
-        if (isHeaderRow(row)) { flush(); continue; }
+        // Re-detect columns on repeated page headers (layout may differ per page)
+        if (isHeaderRow(row)) { flush(); detectLayout(row); continue; }
 
         const rawDate = normStr(getCell(grid, r, dateCol));
         const d1      = normStr(getCell(grid, r, d1Col));
@@ -204,10 +213,19 @@ export function parse(cells: Cell[]): ParseResult {
         // Guard: only check balCol+1 when balCol is valid (avoid reading date/desc columns).
         const rawOD   = odCol >= 0 ? normStr(getCell(grid, r, odCol))
             : (balCol >= 0 ? normStr(getCell(grid, r, balCol + 1)) : '');
+
+        // NatWest appends an interest-rate table after the last transaction (e.g.
+        // "33.75% NAR" / "39.49% EAR"). Reject any row where the amount or balance
+        // column contains a percent sign — these are rates, not monetary values.
+        const rawAmtCol = amountCol >= 0 ? normStr(getCell(grid, r, amountCol)) :
+                          inCol >= 0     ? normStr(getCell(grid, r, inCol))      : '';
+        if (rawAmtCol.includes('%') || rawBal.includes('%')) continue;
+
         // For "Date|Description|Type|Paid in|Paid out" format: typeCol is set, d1=description.
         // For "Date|Details|[blank]|Withdrawn|Paid In|Balance" format: typeCol=-1, d1=type, d2=description.
-        const txType  = typeCol >= 0 ? normStr(getCell(grid, r, typeCol)) : d1;
-        const txDesc  = typeCol >= 0 ? d1 : d2;
+        // For "Date|Description|Amount|Balance" (5-col merged or 4-col): typeCol=-1, d2Col=-1, d1=description.
+        const txType  = typeCol >= 0 ? normStr(getCell(grid, r, typeCol)) : (d2Col >= 0 ? d1 : '');
+        const txDesc  = typeCol >= 0 ? d1 : (d2Col >= 0 ? d2 : d1);
 
         // ── Amount calculation ────────────────────────────────────────────────
         let moneyIn = '', moneyOut = '';
@@ -215,15 +233,44 @@ export function parse(cells: Cell[]): ParseResult {
         if (is6col || (inCol >= 0 && outCol >= 0)) {
             if (outCol >= 0) moneyOut = amt(getCell(grid, r, outCol));
             if (inCol  >= 0) moneyIn  = amt(getCell(grid, r, inCol));
+            // Azure DI occasionally assigns a Withdrawn amount to the Paid-In column.
+            // Use balance delta to detect and correct the direction.
+            if (!is6col) {
+                const balN = parseMoney(rawBal);
+                if (balN !== null && prevBalance !== null) {
+                    const delta = balN - prevBalance;
+                    if (moneyIn && !moneyOut && delta < -0.005) { moneyOut = moneyIn; moneyIn = ''; }
+                    else if (moneyOut && !moneyIn && delta > 0.005) { moneyIn = moneyOut; moneyOut = ''; }
+                }
+                if (balN !== null) prevBalance = balN;
+            }
         } else if (inCol >= 0) {
             moneyIn = amt(getCell(grid, r, inCol));
         } else if (outCol >= 0) {
             moneyOut = amt(getCell(grid, r, outCol));
         } else {
             // Single amount column — direction inferred from balance delta
-            const rawAmt = amountCol >= 0 ? normStr(getCell(grid, r, amountCol)) : '';
-            const amtN   = parseMoney(rawAmt);
-            const balN   = parseMoney(rawBal);
+            let amtN = parseMoney(rawAmtCol);
+            // Fallback A: Azure DI occasionally places the amount one column right of
+            // the expected merged column (e.g. c3 when amountCol=2, balCol=4).
+            // Scan columns between amountCol+1 and balCol-1 for a non-zero value.
+            if (amtN === null && balCol > amountCol + 1) {
+                for (let c = amountCol + 1; c < balCol; c++) {
+                    const v = normStr(getCell(grid, r, c));
+                    if (v && !v.includes('%')) {
+                        const n = parseMoney(v);
+                        if (n !== null && n !== 0) { amtN = n; break; }
+                    }
+                }
+            }
+            // Fallback B: NatWest occasionally embeds the amount at the end of the
+            // description when the amount column is blank
+            // (e.g. "Automated Credit B&M EUROPEAN VALUE 2,103.05").
+            if (amtN === null && d1) {
+                const m = d1.match(/([\d,]+\.\d{2})$/);
+                if (m) { const n = parseMoney(m[1]); if (n !== null && n > 0) amtN = n; }
+            }
+            const balN = parseMoney(rawBal);
 
             if (amtN !== null && amtN !== 0) {
                 if (amtN < 0) {
@@ -242,6 +289,8 @@ export function parse(cells: Cell[]): ParseResult {
         const hasAmount = !!(moneyIn || moneyOut);
         const balance = signedBal(rawBal, rawOD);
         const date = parseDate(rawDate, period, fallbackYear);
+        // True for both merged-column (amountCol) and split 5-col (inCol+outCol without 6-col)
+        const isSingleOrSplit5col = amountCol >= 0 || (!is6col && inCol >= 0 && outCol >= 0);
 
         if (date) {
             flush();
@@ -249,23 +298,26 @@ export function parse(cells: Cell[]): ParseResult {
             current = { date: currentDate, type: txType, description: txDesc, moneyOut, moneyIn, balance };
         } else if (current) {
             const hasAmt = !!(moneyIn || moneyOut);
-            // In single-amount-column mode (merged Paid-In/Withdrawn header), NatWest omits
-            // the date for same-day transactions after the first. Each such row owns its
-            // own balance, so treat it as a new transaction.
-            // Rows with an amount but NO balance are page footers/interest tables — skip them.
-            if (amountCol >= 0 && hasAmt && balance) {
+            // NatWest omits the date for same-day transactions after the first — each such row
+            // owns its own balance. Applies to both merged-column (amountCol) and split 5-col
+            // (separate Paid-In/Withdrawn columns) formats.
+            // Rows with an amount but NO balance are not real transactions — skip them.
+            if (isSingleOrSplit5col && hasAmt && balance) {
                 flush();
                 current = { date: currentDate, type: txType, description: txDesc, moneyOut, moneyIn, balance };
-            } else if (amountCol >= 0 && hasAmt && !balance) {
-                // No balance → not a real transaction row (e.g. interest-rate table on page 3)
+            } else if (isSingleOrSplit5col && hasAmt && !balance) {
+                // No balance → not a real transaction row
             } else {
                 // Standard continuation — merge description/amounts into current.
                 // NatWest 6-col spreads amounts onto the last continuation row.
                 if (typeCol >= 0) {
                     if (d1) current.description = normStr(`${current.description} ${d1}`);
-                } else {
+                } else if (d2Col >= 0) {
                     if (d1 && !current.type) current.type        = d1;
                     if (d2)                  current.description = normStr(`${current.description} ${d2}`);
+                } else {
+                    // 5-col merged or 4-col: d1 IS the description
+                    if (d1) current.description = normStr(`${current.description} ${d1}`);
                 }
                 if (balance && !current.balance)   current.balance  = balance;
                 if (moneyOut && !current.moneyOut) current.moneyOut = moneyOut;
@@ -279,17 +331,36 @@ export function parse(cells: Cell[]): ParseResult {
 
     flush();
 
-    // Extract declared statement totals from the summary block (e.g. "Paid In £4,948.03 Withdrawn £3,755.76")
-    let statementTotals: { moneyIn: number; moneyOut: number } | undefined;
-    const paidInMatch  = ocrText.match(/paid\s+in\s+[£$]?([\d,]+(?:\.\d{1,2})?)/i);
-    const withdrawnMatch = ocrText.match(/withdrawn\s+[£$]?([\d,]+(?:\.\d{1,2})?)/i);
-    if (paidInMatch && withdrawnMatch) {
-        const moneyIn  = parseMoney(paidInMatch[1]);
-        const moneyOut = parseMoney(withdrawnMatch[1]);
-        if (moneyIn !== null && moneyOut !== null) {
-            statementTotals = { moneyIn, moneyOut };
+    // Extract declared statement totals from the summary block that sits above the header.
+    // NatWest places "Previous Balance / Paid In / Withdrawn / New Balance" as grid rows
+    // (rowIndex >= 0) before the transaction table header — not in OCR text (rowIndex < 0).
+    let declaredIn: number | undefined, declaredOut: number | undefined;
+    let declaredOpen: number | undefined, declaredClose: number | undefined;
+    const scanLimit = headerRowIndex >= 0 ? headerRowIndex : 20;
+    for (let r = 0; r < scanLimit; r++) {
+        const row = grid.get(r);
+        if (!row) continue;
+        const sorted  = [...row.entries()].sort((a, b) => a[0] - b[0]);
+        const label   = sorted.map(([, v]) => normStr(v)).join(' ').toLowerCase();
+        let   val: number | null = null;
+        for (let i = sorted.length - 1; i >= 0; i--) {
+            const n = parseMoney(sorted[i][1]);
+            if (n !== null) { val = Math.abs(n); break; }
         }
+        if (val === null) continue;
+        if (/\bpaid\s+in\b/.test(label) && !/withdrawn/.test(label)) declaredIn    = val;
+        else if (/\bwithdrawn\b/.test(label))                         declaredOut   = val;
+        else if (/previous\s+balance/.test(label))                    declaredOpen  = val;
+        else if (/new\s+balance/.test(label))                         declaredClose = val;
     }
+    const statementTotals = declaredIn !== undefined || declaredOut !== undefined
+        ? {
+            moneyIn:        declaredIn  ?? 0,
+            moneyOut:       declaredOut ?? 0,
+            openingBalance: declaredOpen,
+            closingBalance: declaredClose,
+          }
+        : undefined;
 
     return { transactions, statementTotals, ascending: true };
 }
