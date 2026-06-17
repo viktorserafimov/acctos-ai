@@ -273,6 +273,7 @@ export function parse(cells: Cell[]): ParseResult {
     let dateCol = 0, descCol = 2;
     let inCol: number | null = null, outCol: number | null = null, balCol: number | null = null;
     let headerRow = -1;
+    let firstHeaderRow = -1;  // earliest valid header row (may differ from best-scored)
     let bestHeaderScore = 0;
 
     for (let r = 0; r <= rows; r++) {
@@ -294,6 +295,11 @@ export function parse(cells: Cell[]): ParseResult {
             else if (/^£?\s*balance$/.test(lo)) { score += 1; tBalCol = c; }
         }
 
+        // Track the earliest row that looks like a real transaction header (score ≥ 4).
+        // This lets multi-page statements (compact 5-col on page 2, full 6-col on page 3)
+        // include all transactions rather than skipping the earlier page.
+        if (score >= 4 && firstHeaderRow === -1) firstHeaderRow = r;
+
         if (score > bestHeaderScore) {
             bestHeaderScore = score;
             headerRow = r;
@@ -304,7 +310,10 @@ export function parse(cells: Cell[]): ParseResult {
         if (tInCol !== null && tOutCol !== null && tBalCol !== null) break;
     }
 
-    const startRow = headerRow >= 0 ? headerRow + 1 : 0;
+    // Start from the EARLIEST valid header so we don't skip transactions on an earlier
+    // page when a higher-scoring header appears on a later page.
+    const firstValidHeader = firstHeaderRow >= 0 ? firstHeaderRow : headerRow;
+    const startRow = firstValidHeader >= 0 ? firstValidHeader + 1 : 0;
 
     // ── Row loop ───────────────────────────────────────────────────────────────
     let openingBalance = 0;
@@ -374,7 +383,10 @@ export function parse(cells: Cell[]): ParseResult {
             outRaw = v[outCol] ?? '';
             bRaw   = balCol !== null ? (v[balCol] ?? '') : '';
         } else if (maxC >= 4) {
-            inRaw  = v[2] ?? '';
+            const v2 = v[2] ?? '';
+            // Skip v[2] as inRaw when it was already captured as the description
+            // (compact Santander layout: v[2] = desc for money-out, amount for money-in).
+            inRaw  = (v2 !== '' && v2 === description) ? '' : v2;
             outRaw = v[3] ?? '';
             bRaw   = v[4] ?? '';
         } else if (maxC === 3) {
