@@ -21,6 +21,7 @@ import { FileSummary } from './src/services/processing/JobStore.js';
 import { parse as parseNationwide } from './src/services/processing/parsers/nationwide.js';
 import { parse as parseSantander } from './src/services/processing/parsers/santander.js';
 import { parse as parseBarclays } from './src/services/processing/parsers/barclays.js';
+import { parse as parseBarclaysBusiness } from './src/services/processing/parsers/barclays-business.js';
 import { parse as parseHsbc } from './src/services/processing/parsers/hsbc.js';
 
 const FOLDER = process.argv[2];
@@ -30,8 +31,9 @@ function getParser(bank: string): ((cells: Cell[]) => ParseResult) | null {
     switch (bank) {
         case 'nationwide': return parseNationwide;
         case 'santander':  return parseSantander;
-        case 'barclays':   return parseBarclays;
-        case 'hsbc':       return parseHsbc;
+        case 'barclays':          return parseBarclays;
+        case 'barclays-business': return parseBarclaysBusiness;
+        case 'hsbc':              return parseHsbc;
         default:           return null;
     }
 }

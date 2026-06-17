@@ -1,6 +1,6 @@
 export type BankType =
     | 'hsbc' | 'revolut' | 'monzo' | 'wise' | 'starling'
-    | 'natwest' | 'mettle' | 'nationwide' | 'santander' | 'barclays' | 'barclaycard' | 'metro'
+    | 'natwest' | 'mettle' | 'nationwide' | 'santander' | 'barclays' | 'barclays-business' | 'barclaycard' | 'metro'
     | 'lloyds' | 'tsb' | 'tide' | 'rbs' | 'virginmoney' | 'pockit' | 'zempler' | 'countingup'
     | 'halifax' | 'anna'
     | 'generic';
@@ -57,6 +57,7 @@ function detectBank(lower: string): BankType {
     if (lower.includes('nationwide'))                             return 'nationwide';
     if (lower.includes('santander'))                              return 'santander';
     if (lower.includes('barclaycard'))                            return 'barclaycard';
+    if (lower.includes('barclays business account'))              return 'barclays-business';
     if (lower.includes('barclays'))                               return 'barclays';
     if (lower.includes('metro'))                                  return 'metro';
     if (lower.includes('lloyds'))                                 return 'lloyds';
@@ -113,6 +114,7 @@ export function detectBankFromContent(text: string): BankType {
     // Nationwide without "nationwide" in text — detected by unique footer/summary phrase
     if (t.includes('balance carried forward to next statement'))     return 'nationwide';
     if (/\bbarclaycard\b/i.test(t))                                  return 'barclaycard';
+    if (/barclays\s+business\s+account/i.test(t))                    return 'barclays-business';
     if (/\bbarclays\b/.test(t))                                      return 'barclays';
     if (/\btsb\b/.test(t) || /203\s*284\s*1576/.test(t))            return 'tsb';
     if (/\blloyds\b/.test(t))                                        return 'lloyds';
