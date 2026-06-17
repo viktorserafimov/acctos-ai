@@ -47,6 +47,40 @@ function txKey(t: ParsedTransaction): string {
     return [t.date, t.type, t.description, t.moneyIn, t.moneyOut].join('|').toLowerCase();
 }
 
+// Extract the Starling summary box printed before the transaction table:
+//   Opening Balance  £75.92
+//   Payments In      £668.91
+//   Payments Out     £733.36
+//   Closing Balance  £11.47
+function extractStarlingSummary(
+    grid: Map<number, Map<number, string>>,
+    sortedRows: number[],
+): { openingBalance: number; closingBalance: number; moneyIn: number; moneyOut: number } | null {
+    let openBal: number | null = null;
+    let closeBal: number | null = null;
+    let pIn: number | null = null;
+    let pOut: number | null = null;
+
+    for (const r of sortedRows) {
+        const row = grid.get(r)!;
+        const rowCells = [...row.values()];
+        if (isHeaderRow(rowCells)) break; // stop at transaction table header
+
+        const label = normStr(row.get(0) ?? '').toLowerCase();
+        const value = normStr(row.get(1) ?? '');
+
+        if (label === 'opening balance')      openBal  = parseMoney(value);
+        else if (label === 'closing balance') closeBal = parseMoney(value);
+        else if (label === 'payments in')     pIn      = parseMoney(value);
+        else if (label === 'payments out')    pOut     = parseMoney(value);
+    }
+
+    if (openBal !== null && closeBal !== null) {
+        return { openingBalance: openBal, closingBalance: closeBal, moneyIn: pIn ?? 0, moneyOut: pOut ?? 0 };
+    }
+    return null;
+}
+
 function extractFromSection(
     rows: number[],
     grid: Map<number, Map<number, string>>,
@@ -199,8 +233,23 @@ export function parse(cells: Cell[]): ParseResult {
     }
     flushSection();
 
+    const starlingSummary = extractStarlingSummary(grid, sortedRows);
+
     // Raw text fallback only when table extraction found nothing
-    if (transactions.length > 0) return { transactions, ascending: true };
+    if (transactions.length > 0) {
+        return {
+            transactions,
+            ascending: true,
+            ...(starlingSummary ? {
+                statementTotals: {
+                    moneyIn:        starlingSummary.moneyIn,
+                    moneyOut:       starlingSummary.moneyOut,
+                    openingBalance: starlingSummary.openingBalance,
+                    closingBalance: starlingSummary.closingBalance,
+                },
+            } : {}),
+        };
+    }
 
     return rawFallback(rawText, transactions);
 }
