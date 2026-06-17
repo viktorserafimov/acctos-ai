@@ -201,5 +201,25 @@ export function parse(cells: Cell[], _opts?: { pendingFromPrev?: ParsedTransacti
         }
     }
 
-    return { transactions };
+    // Monzo statements are newest-first (ascending: false).
+    // Derive statementTotals: closing = first txn balance; opening = closing + out - in.
+    let totalIn = 0, totalOut = 0;
+    for (const t of transactions) {
+        totalIn  += parseMoney(t.moneyIn  || '') ?? 0;
+        totalOut += parseMoney(t.moneyOut || '') ?? 0;
+    }
+    totalIn  = Math.round(totalIn  * 100) / 100;
+    totalOut = Math.round(totalOut * 100) / 100;
+
+    const closingBal = transactions.length > 0 ? parseMoney(transactions[0].balance || '') : null;
+    const openingBal = closingBal !== null ? Math.round((closingBal + totalOut - totalIn) * 100) / 100 : null;
+
+    const statementTotals = closingBal !== null && openingBal !== null ? {
+        moneyIn:  totalIn,
+        moneyOut: totalOut,
+        openingBalance: openingBal,
+        closingBalance: closingBal,
+    } : undefined;
+
+    return { transactions, ascending: false, ...(statementTotals ? { statementTotals } : {}) };
 }
