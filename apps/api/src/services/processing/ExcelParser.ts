@@ -10,6 +10,136 @@ export interface ExcelTransaction {
     Balance: string;
 }
 
+// ── Deterministic cell helpers ────────────────────────────────────────────────
+
+function normStr(v: any): string {
+    return String(v ?? '').trim().replace(/\s+/g, ' ');
+}
+
+function colIdx(v: string | undefined): number {
+    if (!v || v === '') return -1;
+    const n = parseInt(v, 10);
+    return isNaN(n) ? -1 : n;
+}
+
+function cellToDate(val: any): string {
+    if (val == null || val === '') return '';
+    if (val instanceof Date) {
+        if (isNaN(val.getTime())) return '';
+        const d  = String(val.getDate()).padStart(2, '0');
+        const mo = String(val.getMonth() + 1).padStart(2, '0');
+        return `${d}/${mo}/${val.getFullYear()}`;
+    }
+    if (typeof val === 'number') return excelSerialToDate(val);
+    return parseDateToDDMMYYYY(String(val));
+}
+
+function cellToAmount(val: any): number {
+    if (val == null || val === '') return 0;
+    if (typeof val === 'number') return Math.abs(val);
+    let s = String(val).trim();
+    // Parentheses = negative (we always take abs here)
+    s = s.replace(/^\((.+)\)$/, '$1');
+    // Strip currency symbols/codes
+    s = s.replace(/[£$€]/g, '').replace(/\b(GBP|USD|EUR|CHF)\b/gi, '').trim();
+    // EU thousands format: 1.234,56 → 1234.56
+    if (/\d{1,3}(\.\d{3})+,\d{2}$/.test(s)) {
+        s = s.replace(/\./g, '').replace(',', '.');
+    } else {
+        s = s.replace(/,/g, '');
+    }
+    const n = parseFloat(s);
+    return isNaN(n) ? 0 : Math.abs(n);
+}
+
+function cellToSigned(val: any): number {
+    if (val == null || val === '') return 0;
+    if (typeof val === 'number') return val;
+    const s = String(val).trim();
+    const negative = s.startsWith('-') || /^\(.+\)$/.test(s);
+    const abs = cellToAmount(val);
+    return negative ? -abs : abs;
+}
+
+function cellToBalance(val: any): string {
+    if (val == null || val === '') return '';
+    if (typeof val === 'number') return val.toFixed(2);
+    const s = String(val).trim();
+    const isOD = /\b(OD|DR)\b/i.test(s);
+    const cleaned = s.replace(/\b(OD|DR)\b/gi, '').trim();
+    const n = cellToAmount(cleaned);
+    if (!n) return '';
+    return isOD ? (-n).toFixed(2) : n.toFixed(2);
+}
+
+const SKIP_ROW_RE = /\b(opening\s+balance|closing\s+balance|balance\s+b[\/]d|balance\s+c[\/]d|brought\s+forward|carried\s+forward|b\/f\b|c\/f\b|total\b|sub[\-\s]?total)\b/i;
+
+function extractDeterministic(rawRows: any[][], schemaMap: Record<string, string>): ExcelTransaction[] {
+    const dateCol   = colIdx(schemaMap['Transaction Date']);
+    const descCol   = colIdx(schemaMap['Transaction Description']);
+    const typeCol   = colIdx(schemaMap['Transaction Type']);
+    const creditCol = colIdx(schemaMap['Credit Amount']);
+    const debitCol  = colIdx(schemaMap['Debit Amount']);
+    const signedCol = colIdx(schemaMap['Signed Amount']);
+    const balCol    = colIdx(schemaMap['Balance']);
+
+    if (dateCol < 0) return [];
+
+    // Find header row: first row where dateCol value is a text label, not a real date
+    let startRow = 0;
+    for (let i = 0; i < Math.min(10, rawRows.length); i++) {
+        const v = normStr(rawRows[i][dateCol] ?? '');
+        if (/^(date|transaction[\s_]date|booking[\s_]date|value[\s_]date|дата)/i.test(v)) {
+            startRow = i + 1;
+            break;
+        }
+    }
+
+    const result: ExcelTransaction[] = [];
+
+    for (let i = startRow; i < rawRows.length; i++) {
+        const row = rawRows[i];
+
+        const date = cellToDate(row[dateCol]);
+        if (!date) continue;
+
+        const desc = descCol >= 0 ? normStr(row[descCol]) : '';
+        const type = typeCol >= 0 ? normStr(row[typeCol]) : '';
+
+        if (SKIP_ROW_RE.test(desc) || SKIP_ROW_RE.test(type)) continue;
+
+        let moneyIn  = '';
+        let moneyOut = '';
+
+        if (creditCol >= 0 || debitCol >= 0) {
+            const credit = creditCol >= 0 ? cellToAmount(row[creditCol]) : 0;
+            const debit  = debitCol  >= 0 ? cellToAmount(row[debitCol])  : 0;
+            if (credit > 0) moneyIn  = credit.toFixed(2);
+            if (debit  > 0) moneyOut = debit.toFixed(2);
+        } else if (signedCol >= 0) {
+            const signed = cellToSigned(row[signedCol]);
+            if (signed > 0) moneyIn  = signed.toFixed(2);
+            if (signed < 0) moneyOut = Math.abs(signed).toFixed(2);
+        }
+
+        if (!moneyIn && !moneyOut) continue;
+
+        const balance    = balCol >= 0 ? cellToBalance(row[balCol]) : '';
+        const typeAndDesc = type ? `${type} ${desc}`.trim() : desc;
+
+        result.push({
+            Date: date,
+            Type: type,
+            'Type and Description': typeAndDesc,
+            'Money in':  moneyIn,
+            'Money out': moneyOut,
+            Balance: balance,
+        });
+    }
+
+    return result;
+}
+
 // Phase 1: Schema detection — identify which column maps to which canonical field
 const SCHEMA_DETECTION_PROMPT = `You are a bank statement column header detector. Analyze the provided spreadsheet rows and return a JSON object identifying which column index (0-based) maps to each canonical field.
 
@@ -45,44 +175,6 @@ Output format:
   "Signed Amount": ""
 }`;
 
-// Phase 2: Row extraction — normalize all transaction rows
-const ROW_EXTRACTION_PROMPT = `You are a bank statement row extractor. Given spreadsheet rows and a column mapping, extract all valid transaction rows as a JSON array.
-
-Rules:
-- Output ONLY a JSON array, no markdown, no explanations, no wrapping object
-- Date normalization: DD/MM/YYYY format, 2-digit day and month, 4-digit year
-- Excel serial dates: base = 1899-12-30 (NOT 1900-01-01). Serial 45795 = 18/05/2025. Columns annotated with "(serial)" contain Excel serial dates — apply the base conversion
-- Two-digit years: 00-69 → 2000-2069, 70-99 → 1900-1999
-- Day-first for ambiguous dates (e.g., 01/02/2024 = 1 Feb, not 1 Jan)
-- Invalid or missing date → skip row entirely
-- Rows where date column is empty → skip (even if amounts are present)
-- Money: strip £ $ € symbols AND letter prefixes like "GBP", "USD", "EUR"; remove spaces; commas as thousands separators; handle EU format (1.234,56 → 1234.56)
-- Handle negative values written as (1234.56) — parentheses = negative
-- Output amounts as positive strings with exactly 2 decimal places (e.g., "1234.56")
-- For Signed Amount column: if value contains "-" prefix or "()" wrapping → Money out; otherwise → Money in
-- If BOTH a "Total Amount" and "Amount" column exist and their values differ, use Total Amount
-- For Balance column: if value ends in "OD" or "DR" (e.g. "1,234.56 OD"), strip suffix and treat as negative — output as negative value
-- VAT/invoice rows: Gross Amount → Money out, Balance → leave empty ""
-- Skip rows that are: headers, empty, totals/summaries, banner/title rows
-- Opening balance rows (text contains "opening", "brought forward", "b/f", "balance b/d") → skip
-- Closing balance rows (text contains "closing", "carried forward", "c/f", "balance c/d") → skip
-- Rows where ALL amount columns are empty → skip
-- If a description cell contains only dashes, asterisks, or equals signs → skip (separator row)
-- "Type and Description": if Type column exists and is non-empty, concatenate as "TYPE DESC"; if Type is empty or not mapped, use Description only
-- Must return ALL valid transaction rows (not just the first)
-- If no valid rows: return []
-
-Output per row:
-{
-  "Date": "DD/MM/YYYY",
-  "Type": "",
-  "Type and Description": "",
-  "Money in": "",
-  "Money out": "",
-  "Balance": ""
-}
-
-IMPORTANT: Your response must start with "[" and end with "]". Do not wrap in an object. Do not add any text before "[" or after "]".`;
 
 async function callOpenAI(systemPrompt: string, userContent: string, jsonMode: boolean): Promise<string> {
     const apiKey = process.env.OPENAI_API_KEY;
@@ -126,7 +218,7 @@ function rowsToText(rows: any[][]): string {
 }
 
 export async function parseExcel(fileBuffer: Buffer): Promise<ExcelTransaction[]> {
-    const workbook = XLSX.read(fileBuffer, { type: 'buffer', raw: true });
+    const workbook = XLSX.read(fileBuffer, { type: 'buffer', cellDates: true });
     const sheetName = workbook.SheetNames[0];
     const sheet = workbook.Sheets[sheetName];
 
@@ -138,16 +230,16 @@ export async function parseExcel(fileBuffer: Buffer): Promise<ExcelTransaction[]
 
     if (rawRows.length === 0) return [];
 
-    // Phase 1: schema detection on first 20 rows
+    // Phase 1: LLM schema detection on first 20 rows (1 API call)
     const first20Text = rowsToText(rawRows.slice(0, 20));
     const schemaRaw = await callOpenAI(SCHEMA_DETECTION_PROMPT, first20Text, true);
 
     let schemaMap: Record<string, string> = {};
     try {
         schemaMap = JSON.parse(schemaRaw);
-        const hasDate = schemaMap['Transaction Date'] !== '';
+        const hasDate   = schemaMap['Transaction Date'] !== '';
         const hasAmount = schemaMap['Credit Amount'] !== '' ||
-                          schemaMap['Debit Amount'] !== '' ||
+                          schemaMap['Debit Amount']  !== '' ||
                           schemaMap['Signed Amount'] !== '';
         if (!hasDate || !hasAmount) {
             console.warn('[ExcelParser] Schema detection found no date or amount columns:', schemaMap);
@@ -158,38 +250,6 @@ export async function parseExcel(fileBuffer: Buffer): Promise<ExcelTransaction[]
         return [];
     }
 
-    // Phase 2: row extraction in batches of 50
-    const allTransactions: ExcelTransaction[] = [];
-    const batchSize = 50;
-
-    for (let i = 0; i < rawRows.length; i += batchSize) {
-        const batch = rawRows.slice(i, i + batchSize);
-        const batchText = rowsToText(batch);
-        const prompt = `
-Column mapping (0-based column indices):
-- Transaction Date is in column: ${schemaMap['Transaction Date'] || 'not found'}
-- Transaction Description is in column: ${schemaMap['Transaction Description'] || 'not found'}
-- Transaction Type is in column: ${schemaMap['Transaction Type'] || 'not found'}
-- Credit Amount (Money in) is in column: ${schemaMap['Credit Amount'] || 'not found'}
-- Debit Amount (Money out) is in column: ${schemaMap['Debit Amount'] || 'not found'}
-- Signed Amount is in column: ${schemaMap['Signed Amount'] || 'not found'}
-- Balance is in column: ${schemaMap['Balance'] || 'not found'}
-
-Rows to extract:
-${batchText}
-`.trim();
-        const resultRaw = await callOpenAI(ROW_EXTRACTION_PROMPT, prompt, false);
-
-        const cleaned = resultRaw.replace(/```json\s*/gi, '').replace(/```\s*/gi, '').trim();
-        try {
-            const parsed = JSON.parse(cleaned);
-            if (Array.isArray(parsed)) {
-                allTransactions.push(...parsed);
-            }
-        } catch {
-            console.warn('[ExcelParser] Batch extraction returned invalid JSON for rows', i, '-', i + batchSize);
-        }
-    }
-
-    return allTransactions;
+    // Phase 2: deterministic row extraction — no LLM, no batching, no dropped rows
+    return extractDeterministic(rawRows, schemaMap);
 }
