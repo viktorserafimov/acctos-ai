@@ -133,11 +133,13 @@ OUTFLOW CATEGORIZATION (ONLY IF Amount < 0)
 
 Apply categories in this strict order:
 
+RENT (KEYWORD PRIORITY)
+
 LOAN
 
 SALARY
 
-HMRC / RENT / BILLS / PHONE / TRAVEL / INSURANCE / CHARGES / CASH
+HMRC / BILLS / PHONE / TRAVEL / INSURANCE / CHARGES / CASH
 
 Bank_Transfer
 
@@ -149,13 +151,13 @@ Outflows are NEVER uncategorized.
 
 CATEGORY RULES (OUTFLOWS)
 
+RENT → Description contains the word "rent" or "rental" (case-insensitive), OR payee is a landlord / letting agent. KEYWORD MATCH OVERRIDES ALL OTHER CATEGORIES.
+
+LOAN → loan or credit repayments (description must contain "loan", "repay", "credit", "instalment", or "finance")
+
 SALARY → payroll, wages paid
 
-LOAN → loan or credit repayments
-
 HMRC → tax, VAT, PAYE
-
-RENT → landlord / letting agent
 
 BILLS → utilities, council, subscriptions
 
