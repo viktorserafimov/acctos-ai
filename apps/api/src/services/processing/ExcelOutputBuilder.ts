@@ -54,10 +54,12 @@ function addVerificationSide(ws: ExcelJS.Worksheet, v: VerificationSummary): voi
     if (v.closingBalance != null) write('Closing balance', v.closingBalance);
     write('');
 
-    const balStatus = v.balanceOk
-        ? '✓ Balance check OK'
-        : `⚠ Mismatch — diff: ${v.balanceDiff != null ? (v.balanceDiff >= 0 ? '+' : '') + v.balanceDiff.toFixed(2) : 'unknown'}`;
-    write(balStatus, null, true);
+    if (v.balanceDiff !== null) {
+        const balStatus = v.balanceOk
+            ? '✓ Balance check OK'
+            : `⚠ Mismatch — diff: ${(v.balanceDiff >= 0 ? '+' : '') + v.balanceDiff.toFixed(2)}`;
+        write(balStatus, null, true);
+    }
 
     if (v.declaredIn != null && v.declaredOut != null) {
         write('');
