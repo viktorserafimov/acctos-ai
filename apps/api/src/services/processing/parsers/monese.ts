@@ -26,10 +26,13 @@ function fmtDate(d: number, m: number, y: number): string {
     return `${String(d).padStart(2,'0')}/${String(m).padStart(2,'0')}/${y}`;
 }
 
-/** Parse signed amount cell: +£1,234.56 or -£1,234.56 */
+/**
+ * Parse signed amount — extracts the FIRST ±£xxx.xx found anywhere in the cell.
+ * Non-anchored so FX trailing content like "-£9.31 -kn80.00 £1 = kn8.5929" works.
+ */
 function parseSignedAmount(s: string): { sign: 1 | -1; amount: number } | null {
     s = normStr(s);
-    const m = s.match(/^([+\-])\s*£\s*(\d{1,3}(?:,\d{3})*(?:\.\d{2})|\d+(?:\.\d{2}))$/);
+    const m = s.match(/([+\-])\s*£\s*(\d{1,3}(?:,\d{3})*(?:\.\d{2})|\d+(?:\.\d{2}))/);
     if (!m) return null;
     const amount = parseFloat(m[2].replace(/,/g, ''));
     if (!isFinite(amount) || amount < 0) return null;
@@ -195,8 +198,13 @@ export function parse(cells: Cell[]): ParseResult {
         const effectiveDate = parsedDate || lastDate;
 
         // ── Amount ──
+        // Three cases handled:
+        //  A. col3 = "-£9.31 -kn80.00 £1=kn8.59" (FX trailing) → non-anchored regex extracts first ±£
+        //  B. col3 = "£568.65" (balance leaked in), col2 = "-£0.05" (pure shift) → extract from col2
+        //  C. col3 = "£4.95" (unsigned fee) → treat as OUT
         let moneyIn:  number | null = null;
         let moneyOut: number | null = null;
+        let amtFromDescCol = false;  // true when amount came from col2 due to column shift
 
         if (COL.amount >= 0) {
             const amtRaw = gv(row, COL.amount);
@@ -204,19 +212,42 @@ export function parse(cells: Cell[]): ParseResult {
             if (parsed) {
                 if (parsed.sign === 1)  moneyIn  = parsed.amount;
                 else                    moneyOut = parsed.amount;
+            } else if (amtRaw) {
+                // col3 has no signed amount — check col2 for column-shifted amount
+                if (COL.desc >= 0) {
+                    const shifted = parseSignedAmount(gv(row, COL.desc));
+                    if (shifted) {
+                        if (shifted.sign === 1) moneyIn  = shifted.amount;
+                        else                    moneyOut = shifted.amount;
+                        amtFromDescCol = true;
+                    }
+                }
+                // Unsigned £xxx.xx in col3 with no sign → treat as OUT (fee)
+                if (moneyIn === null && moneyOut === null) {
+                    const m2 = amtRaw.match(/^£\s*([\d,]+\.\d{2})$/);
+                    if (m2) {
+                        const amt = parseFloat(m2[1].replace(/,/g, ''));
+                        if (isFinite(amt) && amt > 0) moneyOut = amt;
+                    }
+                }
             }
         }
 
         // ── Balance ──
-        const balance = parseBalance(gv(row, COL.bal));
+        // When amount came from col2 (column shift), col3 holds the balance
+        const balRaw = amtFromDescCol ? gv(row, COL.amount) : gv(row, COL.bal);
+        const balance = parseBalance(balRaw) ?? (amtFromDescCol ? null : parseBalance(gv(row, COL.bal)));
 
         // ── Description ──
         const descParts: string[] = [];
         for (let c = 0; c < row.length; c++) {
             if (!row[c]) continue;
             if (c === COL.date || c === COL.paymentDate) continue;
-            if (c === COL.amount && parseSignedAmount(row[c])) continue;
-            if (c === COL.bal   && parseBalance(row[c]) !== null) continue;
+            // Skip amount col — either it was used normally or it's the shifted balance
+            if (c === COL.amount && (parseSignedAmount(row[c]) || amtFromDescCol)) continue;
+            if (c === COL.bal && parseBalance(row[c]) !== null) continue;
+            // For pure column-shift rows (col2 IS the signed amount), skip col2 too
+            if (amtFromDescCol && c === COL.desc && /^[+\-]\s*£/.test(row[c])) continue;
             descParts.push(row[c]);
         }
         const desc = descParts.filter(Boolean).join(' ').trim();
