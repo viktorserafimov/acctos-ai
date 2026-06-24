@@ -28,9 +28,13 @@ app.use(express.json({
 // Make prisma available to routes
 app.locals.prisma = prisma;
 
-// Health check
+// Health check — includes git commit so you can verify which code is running
+import { execSync } from 'child_process';
+const GIT_COMMIT = (() => { try { return execSync('git rev-parse --short HEAD', { encoding: 'utf8' }).trim(); } catch { return 'unknown'; } })();
+const STARTED_AT = new Date().toISOString();
+
 app.get('/health', (req, res) => {
-    res.json({ status: 'ok', timestamp: new Date().toISOString() });
+    res.json({ status: 'ok', commit: GIT_COMMIT, startedAt: STARTED_AT, timestamp: new Date().toISOString() });
 });
 
 import { integrationsRouter } from './routes/integrations.js';
