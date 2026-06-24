@@ -345,11 +345,71 @@ function parseCatMoney(s: unknown): number {
     return isFinite(n) ? Math.abs(n) : 0;
 }
 
+// VAT verification side panel: cols K=11, L=12 of the Sales sheet, starting at row 3
+const VAT_VER_LABEL_COL = 11;
+const VAT_VER_VALUE_COL = 12;
+
+interface VatStats {
+    total:         number;
+    salesCount:    number;
+    salesTotal:    number;
+    expensesCount: number;
+    expensesTotal: number;
+    unallocated:   string[];
+}
+
+function addVatVerificationSide(ws: ExcelJS.Worksheet, stats: VatStats): void {
+    let r = 3;
+
+    const write = (label: string, value?: number | string | null, bold = false) => {
+        const row = ws.getRow(r++);
+        const lc = row.getCell(VAT_VER_LABEL_COL);
+        lc.value = label;
+        if (bold) lc.font = { bold: true };
+        if (value != null) {
+            const vc = row.getCell(VAT_VER_VALUE_COL);
+            if (typeof value === 'number') {
+                vc.value = value;
+                vc.numFmt = MONEY_FMT;
+            } else {
+                vc.value = value;
+                if (bold) vc.font = { bold: true };
+            }
+        }
+        row.commit();
+    };
+
+    write('VAT SUMMARY', null, true);
+    write('');
+    write('Total transactions', String(stats.total));
+    write('');
+    write('── Sales ──', null, true);
+    write('Entries', String(stats.salesCount));
+    write('Total net amount', stats.salesTotal);
+    write('');
+    write('── Expenses ──', null, true);
+    write('Entries', String(stats.expensesCount));
+    write('Total gross amount', stats.expensesTotal);
+    write('');
+
+    const allocated = stats.salesCount + stats.expensesCount;
+    if (stats.unallocated.length === 0) {
+        write(`✓ All ${allocated} transactions allocated`, null, true);
+    } else {
+        write(`⚠ ${stats.unallocated.length} unallocated transaction${stats.unallocated.length === 1 ? '' : 's'}`, null, true);
+        write('  (no income or expense amount)');
+        // List up to 10 unallocated so the user can investigate
+        stats.unallocated.slice(0, 10).forEach(desc => write(`  · ${desc.slice(0, 60)}`));
+        if (stats.unallocated.length > 10) write(`  … and ${stats.unallocated.length - 10} more`);
+    }
+}
+
 /**
  * Build a VAT-template Excel from categorized transactions.
  * Income rows (INCOME > 0) → Sales sheet, col E (NET AMOUNT).
  * Expense rows (any expense category > 0) → Expenses sheet, col E (GROSS).
  * Columns: C = date, D = description, E = amount.
+ * A verification summary is placed to the right of the Sales table (cols K-L).
  */
 export async function buildVatOutputExcel(transactions: CategorizedTransaction[]): Promise<Buffer> {
     const templateBuf = readFileSync(VAT_TEMPLATE_PATH);
@@ -364,6 +424,15 @@ export async function buildVatOutputExcel(transactions: CategorizedTransaction[]
     let salesRow    = FIRST_DATA_ROW;
     let expensesRow = FIRST_DATA_ROW;
 
+    const stats: VatStats = {
+        total:         transactions.length,
+        salesCount:    0,
+        salesTotal:    0,
+        expensesCount: 0,
+        expensesTotal: 0,
+        unallocated:   [],
+    };
+
     for (const t of transactions) {
         const incomeAmt  = parseCatMoney(t.INCOME);
         const expenseAmt = VAT_EXPENSE_CATS.reduce((s, k) => s + parseCatMoney((t as any)[k]), 0);
@@ -374,14 +443,22 @@ export async function buildVatOutputExcel(transactions: CategorizedTransaction[]
             row.getCell(4).value = t['Type and Description'];
             row.getCell(5).value = incomeAmt;
             row.commit();
+            stats.salesCount++;
+            stats.salesTotal = Math.round((stats.salesTotal + incomeAmt) * 100) / 100;
         } else if (expenseAmt > 0) {
             const row = expensesWs.getRow(expensesRow++);
             row.getCell(3).value = t.DATE;
             row.getCell(4).value = t['Type and Description'];
             row.getCell(5).value = expenseAmt;
             row.commit();
+            stats.expensesCount++;
+            stats.expensesTotal = Math.round((stats.expensesTotal + expenseAmt) * 100) / 100;
+        } else {
+            stats.unallocated.push(`${t.DATE ?? ''} ${String(t['Type and Description'] ?? '').trim()}`.trim());
         }
     }
+
+    addVatVerificationSide(salesWs, stats);
 
     const arrayBuffer = await workbook.xlsx.writeBuffer();
     return Buffer.from(arrayBuffer);
