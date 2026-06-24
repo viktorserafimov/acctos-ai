@@ -33,9 +33,11 @@ import { execSync } from 'child_process';
 const GIT_COMMIT = (() => { try { return execSync('git rev-parse --short HEAD', { encoding: 'utf8' }).trim(); } catch { return 'unknown'; } })();
 const STARTED_AT = new Date().toISOString();
 
-app.get('/health', (req, res) => {
+const healthHandler = (req: any, res: any) => {
     res.json({ status: 'ok', commit: GIT_COMMIT, startedAt: STARTED_AT, timestamp: new Date().toISOString() });
-});
+};
+app.get('/health',    healthHandler);
+app.get('/v1/health', healthHandler);
 
 import { integrationsRouter } from './routes/integrations.js';
 import { reportsRouter } from './routes/reports.js';
