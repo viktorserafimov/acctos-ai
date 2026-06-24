@@ -459,23 +459,23 @@ async function runJob(jobId: string, filename: string, mimeType: string, fileBuf
             const excelTransactions = await parseExcel(fileBuffer);
             if (excelTransactions.length === 0) throw new Error('No transactions found in spreadsheet');
 
+            // Convert ExcelTransaction → ParsedTransaction for categorization (both modes)
+            const parsed = excelTransactions.map(t => ({
+                date:        t.Date,
+                type:        t.Type,
+                description: t['Type and Description'],
+                moneyIn:     t['Money in'],
+                moneyOut:    t['Money out'],
+                balance:     t.Balance,
+            }));
+            jobStore.update(jobId, { transactionCount: parsed.length, currentStage: 'categorize' });
+            const categorized = await categorize(parsed);
+            jobStore.update(jobId, { transactionCount: categorized.length, currentStage: 'output' });
+
             if (processingMode === 'vat') {
-                // Convert ExcelTransaction → ParsedTransaction for categorization
-                const parsed = excelTransactions.map(t => ({
-                    date:        t.Date,
-                    type:        t.Type,
-                    description: t['Type and Description'],
-                    moneyIn:     t['Money in'],
-                    moneyOut:    t['Money out'],
-                    balance:     t.Balance,
-                }));
-                jobStore.update(jobId, { transactionCount: parsed.length, currentStage: 'categorize' });
-                const categorized = await categorize(parsed);
-                jobStore.update(jobId, { transactionCount: categorized.length, currentStage: 'output' });
                 outputBuffer = await buildVatOutputExcel(categorized);
             } else {
-                jobStore.update(jobId, { transactionCount: excelTransactions.length, currentStage: 'output' });
-                outputBuffer = buildExcelOutputExcel(excelTransactions);
+                outputBuffer = await buildPdfOutputExcel(categorized);
             }
 
         } else {
