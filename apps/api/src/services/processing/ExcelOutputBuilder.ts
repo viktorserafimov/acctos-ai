@@ -62,12 +62,20 @@ function addVerificationSide(ws: ExcelJS.Worksheet, v: VerificationSummary, file
     }
 
     // Per-file verification status
-    const verifiable = (fileSummaries ?? []).filter(f => f.declaredIn != null && f.declaredOut != null);
+    const almostEqualV = (a: number, b: number) => Math.abs(a - b) < 0.02;
+    const verifiable = (fileSummaries ?? []).filter(f =>
+        (f.declaredIn != null && f.declaredOut != null) ||
+        (f.openingBalance != null && f.closingBalance != null)
+    );
     if (verifiable.length > 0) {
-        const almostEqual = (a: number, b: number) => Math.abs(a - b) < 0.02;
-        const failed = verifiable.filter(f =>
-            !almostEqual(f.parsedIn, f.declaredIn!) || !almostEqual(f.parsedOut, f.declaredOut!)
-        );
+        const failed = verifiable.filter(f => {
+            if (f.declaredIn != null && f.declaredOut != null) {
+                return !almostEqualV(f.parsedIn, f.declaredIn) || !almostEqualV(f.parsedOut, f.declaredOut);
+            }
+            // opening/closing balance check
+            const expected = f.openingBalance! + f.parsedIn - f.parsedOut;
+            return !almostEqualV(expected, f.closingBalance!);
+        });
         write('');
         write('── Per-file verification ──', null, true);
         if (failed.length === 0) {
@@ -156,12 +164,32 @@ function addFileSummarySheet(workbook: ExcelJS.Workbook, files: FileSummary[]): 
 
     files.forEach((f, idx) => {
         const row = ws.getRow(idx + 2);
-        const hasDeclared = f.declaredIn != null && f.declaredOut != null;
-        const inDiff  = hasDeclared ? Math.round((f.parsedIn  - f.declaredIn!)  * 100) / 100 : null;
-        const outDiff = hasDeclared ? Math.round((f.parsedOut - f.declaredOut!) * 100) / 100 : null;
-        const ok      = !hasDeclared ? null : (almostEqual(inDiff!, 0) && almostEqual(outDiff!, 0));
-        const status  = ok === null ? '— no declared totals' : ok ? '✓ Match' : `⚠ Mismatch`;
-        const rowFill = ok === null ? undefined : ok ? OK_FILL : (Math.abs(inDiff!) > 1 || Math.abs(outDiff!) > 1 ? ERR_FILL : WARN_FILL);
+        const hasDeclared  = f.declaredIn != null && f.declaredOut != null;
+        const hasBalances  = !hasDeclared && f.openingBalance != null && f.closingBalance != null;
+
+        let inDiff:   number | null = null;
+        let outDiff:  number | null = null;
+        let balDiff:  number | null = null;
+        let ok:       boolean | null = null;
+        let status:   string;
+        let rowFill:  ExcelJS.Fill | undefined;
+
+        if (hasDeclared) {
+            inDiff  = Math.round((f.parsedIn  - f.declaredIn!)  * 100) / 100;
+            outDiff = Math.round((f.parsedOut - f.declaredOut!) * 100) / 100;
+            ok      = almostEqual(inDiff, 0) && almostEqual(outDiff, 0);
+            status  = ok ? '✓ Match' : '⚠ Mismatch';
+            rowFill = ok ? OK_FILL : (Math.abs(inDiff) > 1 || Math.abs(outDiff) > 1 ? ERR_FILL : WARN_FILL);
+        } else if (hasBalances) {
+            // opening + parsedIn - parsedOut should equal closing
+            const expected = f.openingBalance! + f.parsedIn - f.parsedOut;
+            balDiff = Math.round((expected - f.closingBalance!) * 100) / 100;
+            ok      = almostEqual(balDiff, 0);
+            status  = ok ? '✓ Balance OK' : `⚠ Balance diff: ${balDiff > 0 ? '+' : ''}${balDiff.toFixed(2)}`;
+            rowFill = ok ? OK_FILL : (Math.abs(balDiff) > 1 ? ERR_FILL : WARN_FILL);
+        } else {
+            status = '— no check available';
+        }
 
         row.getCell(1).value  = f.filename;
         row.getCell(2).value  = f.transactions;
