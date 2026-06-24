@@ -355,7 +355,6 @@ interface VatStats {
     salesTotal:    number;
     expensesCount: number;
     expensesTotal: number;
-    unallocated:   string[];
 }
 
 function addVatVerificationSide(ws: ExcelJS.Worksheet, stats: VatStats): void {
@@ -391,17 +390,7 @@ function addVatVerificationSide(ws: ExcelJS.Worksheet, stats: VatStats): void {
     write('Entries', String(stats.expensesCount));
     write('Total gross amount', stats.expensesTotal);
     write('');
-
-    const allocated = stats.salesCount + stats.expensesCount;
-    if (stats.unallocated.length === 0) {
-        write(`✓ All ${allocated} transactions allocated`, null, true);
-    } else {
-        write(`⚠ ${stats.unallocated.length} unallocated transaction${stats.unallocated.length === 1 ? '' : 's'}`, null, true);
-        write('  (no income or expense amount)');
-        // List up to 10 unallocated so the user can investigate
-        stats.unallocated.slice(0, 10).forEach(desc => write(`  · ${desc.slice(0, 60)}`));
-        if (stats.unallocated.length > 10) write(`  … and ${stats.unallocated.length - 10} more`);
-    }
+    write(`✓ ${stats.salesCount + stats.expensesCount} of ${stats.total} transactions written`, null, true);
 }
 
 /**
@@ -430,13 +419,13 @@ export async function buildVatOutputExcel(transactions: CategorizedTransaction[]
         salesTotal:    0,
         expensesCount: 0,
         expensesTotal: 0,
-        unallocated:   [],
     };
 
     for (const t of transactions) {
         const incomeAmt  = parseCatMoney(t.INCOME);
         const expenseAmt = VAT_EXPENSE_CATS.reduce((s, k) => s + parseCatMoney((t as any)[k]), 0);
 
+        // Positive transaction (income) → Sales; negative (expense) → Expenses
         if (incomeAmt > 0) {
             const row = salesWs.getRow(salesRow++);
             row.getCell(3).value = t.DATE;
@@ -453,9 +442,8 @@ export async function buildVatOutputExcel(transactions: CategorizedTransaction[]
             row.commit();
             stats.expensesCount++;
             stats.expensesTotal = Math.round((stats.expensesTotal + expenseAmt) * 100) / 100;
-        } else {
-            stats.unallocated.push(`${t.DATE ?? ''} ${String(t['Type and Description'] ?? '').trim()}`.trim());
         }
+        // Zero-amount rows (e.g. pure balance entries) are skipped — not written to either sheet
     }
 
     addVatVerificationSide(salesWs, stats);
