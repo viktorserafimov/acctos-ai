@@ -180,14 +180,16 @@ async function callOpenAI(systemPrompt: string, userContent: string, jsonMode: b
     const apiKey = process.env.OPENAI_API_KEY;
     if (!apiKey) throw new Error('OPENAI_API_KEY not set');
 
+    const model = process.env.OPENAI_MODEL_EXTRACT || 'gpt-4o';
+    const isReasoningModel = /^o\d/i.test(model);
     const body: any = {
-        model: process.env.OPENAI_MODEL_EXTRACT || 'gpt-4o',
+        model,
         messages: [
             { role: 'system', content: systemPrompt },
             { role: 'user', content: userContent },
         ],
-        temperature: 0,
     };
+    if (!isReasoningModel) body.temperature = 0;
     if (jsonMode) body.response_format = { type: 'json_object' };
 
     const res = await fetch('https://api.openai.com/v1/chat/completions', {
