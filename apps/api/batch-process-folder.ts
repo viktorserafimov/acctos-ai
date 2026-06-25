@@ -191,49 +191,15 @@ const declared = isChunkedFile
 
 const verification = computeVerification(allTransactions, declared, true /* ascending after sort */);
 
-// ── NOTIFICATION HOOK ──────────────────────────────────────────────────────
-// TODO: Wire up email / webhook when notification service is connected.
+// ── Notifications ─────────────────────────────────────────────────────────────
+// NotificationService is already wired for the API (ProcessingOrchestrator.ts).
+// Import it here if this script needs the same alerts in CLI mode:
 //
-// Two conditions should trigger an alert to the operator:
+//   import { notifyParserError, notifyChainGap } from './src/services/processing/NotificationService.js';
+//   ... (same logic as in ProcessingOrchestrator)
 //
-// 1. Per-file failure — our parser or categorizer produced wrong totals for
-//    at least one file (parsedIn/Out ≠ declaredIn/Out, or balance equation
-//    openingBalance + parsedIn − parsedOut ≠ closingBalance).
-//
-//    const EPS = 0.02;
-//    function isFileFailed(f: FileSummary): boolean {
-//        if (f.declaredIn != null && f.declaredOut != null)
-//            return Math.abs(f.parsedIn - f.declaredIn)  > EPS
-//                || Math.abs(f.parsedOut - f.declaredOut) > EPS;
-//        if (f.openingBalance != null && f.closingBalance != null)
-//            return Math.abs(f.openingBalance + f.parsedIn - f.parsedOut - f.closingBalance) > EPS;
-//        return false;
-//    }
-//    const failedFiles = fileSummaries.filter(isFileFailed);
-//    if (failedFiles.length > 0) {
-//        await sendAlert({ type: 'per_file_failure', failedFiles, folder: FOLDER });
-//    }
-//
-// 2. Chain gap — every individual file is correct, but the first opening balance
-//    + totalIn − totalOut ≠ last closing balance.  This means the client omitted
-//    one or more statement files and we should notify the client contact.
-//
-//    const chain = computeChainVerification(fileSummaries, totalParsedIn, totalParsedOut);
-//    if (chain && !chain.ok) {
-//        await sendAlert({
-//            type: 'chain_gap',
-//            diff: chain.diff,          // e.g. −1250.00 → missing ~£1 250 of movement
-//            chainOpen: chain.chainOpeningBalance,
-//            chainClose: chain.chainClosingBalance,
-//            folder: FOLDER,
-//        });
-//    }
-//
-// sendAlert() shape (implement in src/services/notifications/):
-//   export async function sendAlert(payload: AlertPayload): Promise<void> {
-//       // e.g. nodemailer / SendGrid / Resend / Slack webhook
-//   }
-// ──────────────────────────────────────────────────────────────────────────
+// Set ALERT_TEAM_WEBHOOK_URL / ALERT_CLIENT_WEBHOOK_URL env vars to receive alerts.
+// ─────────────────────────────────────────────────────────────────────────────
 
 // Step 5: Categorize combined transactions
 console.log(`\nCategorizing ${allTransactions.length} transactions...`);

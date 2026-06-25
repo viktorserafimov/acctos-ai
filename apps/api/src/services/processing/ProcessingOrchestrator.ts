@@ -9,7 +9,8 @@ import { categorize } from './AssistantCategorizer.js';
 import { parseExcel } from './ExcelParser.js';
 import { buildPdfOutputExcel, buildExcelOutputExcel, buildVatOutputExcel } from './ExcelOutputBuilder.js';
 import { Cell, ParsedTransaction, ParseResult } from './parsers/shared.js';
-import { computeVerification, applyCatVerification, logVerificationSummary } from './Verification.js';
+import { computeVerification, applyCatVerification, logVerificationSummary, computeChainVerification } from './Verification.js';
+import { notifyParserError, notifyChainGap } from './NotificationService.js';
 
 interface TrackingContext {
     prisma: PrismaClient;
@@ -387,21 +388,50 @@ async function runBatchJob(jobId: string, files: FileInput[], tracking?: Trackin
         const verification = computeVerification(sorted, combinedStatementTotals, ascending);
         if (verification) logVerificationSummary(verification);
 
-        // ── NOTIFICATION HOOK ────────────────────────────────────────────────────
-        // TODO: Wire up email / webhook when notification service is connected.
-        // See batch-process-folder.ts for the full comment with implementation guide.
-        //
-        // Two triggers:
-        //   1. Per-file failure — isFileFailed(f) for any f in fileSummaries
-        //      → operator alert: our parser/categorizer produced wrong totals
-        //
-        //   2. Chain gap — computeChainVerification(fileSummaries, totalIn, totalOut)
-        //      returns { ok: false } when all individual files pass but the overall
-        //      opening→closing doesn't close — client omitted a statement month.
-        //      → client contact alert: missing statement file(s)
-        //
-        // Both checks should only send if processing succeeded (no exception above).
-        // ────────────────────────────────────────────────────────────────────────
+        // ── Notifications ────────────────────────────────────────────────────────
+        const almostEq = (a: number, b: number) => Math.abs(a - b) < 0.02;
+
+        // 1. Per-file parser verification failure → team alert
+        const failedFiles = fileSummaries.filter(f => {
+            if (f.declaredIn != null && f.declaredOut != null)
+                return !almostEq(f.parsedIn, f.declaredIn) || !almostEq(f.parsedOut, f.declaredOut);
+            if (f.openingBalance != null && f.closingBalance != null)
+                return !almostEq(f.openingBalance + f.parsedIn - f.parsedOut, f.closingBalance);
+            return false;
+        });
+        if (failedFiles.length > 0) {
+            notifyParserError({
+                jobId,
+                tenantId: tracking?.tenantId,
+                label: `batch (${files.length} files)`,
+                failedFiles: failedFiles.map(f => ({
+                    filename:    f.filename,
+                    parsedIn:    f.parsedIn,
+                    parsedOut:   f.parsedOut,
+                    declaredIn:  f.declaredIn,
+                    declaredOut: f.declaredOut,
+                    inDiff:  f.declaredIn  != null ? Math.round((f.parsedIn  - f.declaredIn)  * 100) / 100 : undefined,
+                    outDiff: f.declaredOut != null ? Math.round((f.parsedOut - f.declaredOut) * 100) / 100 : undefined,
+                })),
+            });
+        }
+
+        // 2. Chain gap (all individual files OK, but overall sequence doesn't close) → client alert
+        if (failedFiles.length === 0 && verification) {
+            const chain = computeChainVerification(fileSummaries, verification.totalIn, verification.totalOut);
+            if (chain && !chain.ok) {
+                notifyChainGap({
+                    jobId,
+                    tenantId:           tracking?.tenantId,
+                    fileCount:          files.length,
+                    chainOpeningBalance: chain.chainOpeningBalance,
+                    chainClosingBalance: chain.chainClosingBalance,
+                    expectedClosing:    chain.expectedClosing,
+                    diff:               chain.diff,
+                });
+            }
+        }
+        // ─────────────────────────────────────────────────────────────────────────
 
         jobStore.update(jobId, { currentStage: 'categorize', currentFile: undefined });
         const categorized = await categorize(sorted);
@@ -581,6 +611,25 @@ async function runJob(jobId: string, filename: string, mimeType: string, fileBuf
             console.log(`[Orchestrator] Parsed ${transactions.length} transactions:`, JSON.stringify(transactions, null, 2));
             const verification = computeVerification(transactions, statementTotals, ascending);
             if (verification) logVerificationSummary(verification);
+
+            // Parser verification failure → team alert
+            if (verification && (verification.declaredOk === false || (verification.balanceDiff !== null && !verification.balanceOk))) {
+                notifyParserError({
+                    jobId,
+                    tenantId: tracking?.tenantId,
+                    label:    filename,
+                    failedFiles: [{
+                        filename,
+                        parsedIn:    verification.totalIn,
+                        parsedOut:   verification.totalOut,
+                        declaredIn:  verification.declaredIn,
+                        declaredOut: verification.declaredOut,
+                        inDiff:      verification.declaredIn  != null ? Math.round((verification.totalIn  - verification.declaredIn)  * 100) / 100 : undefined,
+                        outDiff:     verification.declaredOut != null ? Math.round((verification.totalOut - verification.declaredOut) * 100) / 100 : undefined,
+                        balanceDiff: verification.balanceDiff ?? undefined,
+                    }],
+                });
+            }
 
             // ── Stage: categorize (OpenAI Assistant, 50 transactions per batch) ──
             jobStore.update(jobId, { currentStage: 'categorize' });
