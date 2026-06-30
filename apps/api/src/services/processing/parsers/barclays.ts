@@ -583,10 +583,14 @@ function parseNormal(cells: Cell[]): ParseResult {
 }
 
 // ── Statement totals extraction ───────────────────────────────────────────────
-// Barclays summary section has 2-col rows: col0=label, col1=£amount
-// e.g. "Start balance" | "£770.10"  /  "Money out" | "£5,866.49"
+// Barclays summary section: normally 2-col rows (col0=label, col1=£amount).
+// Some statements omit "Money out" / "Start balance" from the cell grid but
+// always include them in the free-text content string after "Continued":
+//   "Money out\n£6,168.61\n..."  "Start balance\n£1,495.64\n..."
+// We try cells first then fall back to the content string for missing fields.
 
 function extractBarclaysStatementTotals(cells: Cell[]): ParseResult['statementTotals'] | undefined {
+    // Pass 1: read from cell structure (label in col0, amount in col1)
     const rows = new Map<number, Map<number, string>>();
     for (const c of cells) {
         if (c.rowIndex < 0) continue;
@@ -610,6 +614,24 @@ function extractBarclaysStatementTotals(cells: Cell[]): ParseResult['statementTo
             const v = parseMoney(c1); if (v !== null) moneyIn = Math.abs(v);
         }
     }
+
+    // Pass 2: fallback to content string for any values still missing.
+    // Pattern: "Label\n£amount" — the £ on the next line distinguishes
+    // summary rows from column headers ("Money out £" on one line).
+    if (moneyOut === undefined || openingBalance === undefined || moneyIn === undefined || closingBalance === undefined) {
+        const raw = cells.find(c => c.rowIndex < 0)?.content ?? '';
+        const pick = (re: RegExp): number | undefined => {
+            const m = re.exec(raw);
+            if (!m) return undefined;
+            const v = parseMoney(m[1]);
+            return v !== null ? Math.abs(v) : undefined;
+        };
+        if (moneyOut === undefined)      moneyOut      = pick(/\bMoney out\n[£€]?([\d,]+\.?\d*)/i);
+        if (moneyIn === undefined)       moneyIn       = pick(/\bMoney in\n[£€]?([\d,]+\.?\d*)/i);
+        if (openingBalance === undefined) openingBalance = pick(/\bStart balance\n[£€]?([\d,]+\.?\d*)/i);
+        if (closingBalance === undefined) closingBalance = pick(/\bEnd balance\n[£€]?([\d,]+\.?\d*)/i);
+    }
+
     if (moneyIn === undefined || moneyOut === undefined) return undefined;
     return { moneyIn, moneyOut, openingBalance, closingBalance };
 }
