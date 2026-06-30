@@ -48,6 +48,34 @@ function dateToSortKey(d: string): number {
     return parseInt(`${m[3]}${m[2]}${m[1]}`);
 }
 
+// Parse statement date from filename → sortable YYYYMMDD key.
+// Supports multiple bank filename formats for chronological chain ordering.
+const STMT_MONTH: Record<string, number> = {
+    JAN:1,FEB:2,MAR:3,APR:4,MAY:5,JUN:6,JUL:7,AUG:8,SEP:9,OCT:10,NOV:11,DEC:12,
+};
+function statementDateKey(filename: string): number {
+    let m: RegExpMatchArray | null;
+    // Barclays: "Statement 09-MAY-25 AC..."
+    m = filename.match(/Statement\s+(\d{1,2})-([A-Za-z]{3})-(\d{2})\b/i);
+    if (m) {
+        const mon = STMT_MONTH[m[2].toUpperCase()] ?? 0;
+        return (2000 + parseInt(m[3])) * 10000 + mon * 100 + parseInt(m[1]);
+    }
+    // Nationwide: "Statement_601312_42734746_04_Jul_2025"
+    m = filename.match(/_(\d{1,2})_([A-Za-z]{3})_(\d{4})(?:\.|$)/i);
+    if (m) {
+        const mon = STMT_MONTH[m[2].toUpperCase()] ?? 0;
+        return parseInt(m[3]) * 10000 + mon * 100 + parseInt(m[1]);
+    }
+    // Nationwide date-range: "--05-04-2025-06-05-2025" → use end date (DD-MM-YYYY)
+    m = filename.match(/--(\d{2}-\d{2}-\d{4})-(\d{2}-\d{2}-\d{4})/);
+    if (m) {
+        const p = m[2].split('-');
+        return parseInt(p[2]) * 10000 + parseInt(p[1]) * 100 + parseInt(p[0]);
+    }
+    return 0;
+}
+
 interface FileResult {
     filename: string;
     bank: string;
@@ -116,6 +144,10 @@ for (const pdf of pdfFiles) {
 }
 
 if (!fileResults.length) { console.error('No parseable files found.'); process.exit(1); }
+
+// Sort fileResults chronologically by statement date (for correct chain continuity check).
+// Transaction output is sorted separately below; this only affects fileSummaries order.
+fileResults.sort((a, b) => statementDateKey(a.filename) - statementDateKey(b.filename));
 
 // Step 2: Combine and sort all transactions chronologically (oldest first)
 const allTransactions: ParsedTransaction[] = fileResults.flatMap(r => {
