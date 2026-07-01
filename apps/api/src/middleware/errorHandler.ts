@@ -11,9 +11,12 @@ export function errorHandler(
     res: Response,
     next: NextFunction
 ) {
-    console.error('Error:', err.message);
-
     const statusCode = err.statusCode || 500;
+
+    // 401/403 are expected auth failures — don't pollute logs
+    if (statusCode >= 500) {
+        console.error('Error:', err.message);
+    }
     const message = err.message || 'Internal server error';
 
     res.status(statusCode).json({
