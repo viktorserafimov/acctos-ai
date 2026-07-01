@@ -412,21 +412,16 @@ function parseNormal(cells: Cell[]): ParseResult {
         let balance  = parseMoney(gv(row, COL.bal));
         const dateCell = gv(row, COL.date);
 
-        // Barclays Business Account stores outgoing amounts as negative (e.g. "-£107.69").
-        // A positive value in the money-out column when balance is absent means the balance
-        // has overflowed into that cell (short rows at page breaks) — reassign it.
-        if (moneyOut !== null) {
-            if (moneyOut < 0) {
-                moneyOut = Math.abs(moneyOut);
-            } else if (moneyOut > 0 && balance === null) {
-                balance = moneyOut;
-                moneyOut = null;
-            }
-        }
-        if (moneyIn !== null && moneyIn < 0) {
-            moneyOut = (moneyOut === null) ? Math.abs(moneyIn) : moneyOut;
-            moneyIn = null;
-        }
+        // Barclays personal layout uses explicit sign via dedicated Money in / Money out columns.
+        // Negative values in either column are a sign error — flip to positive in correct column.
+        if (moneyOut !== null && moneyOut < 0) { moneyIn  = (moneyIn  === null) ? Math.abs(moneyOut) : moneyIn;  moneyOut = null; }
+        if (moneyIn  !== null && moneyIn  < 0) { moneyOut = (moneyOut === null) ? Math.abs(moneyIn)  : moneyOut; moneyIn  = null; }
+
+        // Clamp unreasonably large amounts and balances (phone numbers, reference codes in
+        // footer sections can land in money/balance columns and corrupt the running balance).
+        if (moneyIn  !== null && Math.abs(moneyIn)  > MAX_SANE_AMOUNT) moneyIn  = null;
+        if (moneyOut !== null && Math.abs(moneyOut) > MAX_SANE_AMOUNT) moneyOut = null;
+        if (balance  !== null && Math.abs(balance)  > MAX_SANE_AMOUNT) balance  = null;
 
         const movement = (moneyIn ?? 0) > 0 || (moneyOut ?? 0) > 0;
 
@@ -556,8 +551,10 @@ function parseNormal(cells: Cell[]): ParseResult {
         // Infer missing amounts from balance delta
         if (lastBal !== null && explBal !== null && inA === 0 && outA === 0) {
             const diff = +(explBal - lastBal).toFixed(2);
-            if (diff > 0) { r.moneyIn = diff; inA = diff; }
-            else if (diff < 0) { r.moneyOut = -diff; outA = -diff; }
+            if (Math.abs(diff) <= MAX_SANE_AMOUNT) {
+                if (diff > 0) { r.moneyIn = diff; inA = diff; }
+                else if (diff < 0) { r.moneyOut = -diff; outA = -diff; }
+            }
         }
 
         if (lastBal !== null) {

@@ -100,6 +100,12 @@ export function detectBankFromContent(text: string): BankType {
     // that lack the specific header markers above will still be caught by the fallback on line 101.
     if (/\bsantander\b/.test(t))                                     return 'santander';
     if (/\bnationwide\s+building\s+society\b/.test(t))               return 'nationwide';
+    // Barclays: must appear before Revolut — Barclays statements often contain "Revolut" as a
+    // payee (e.g. "Transfer to Revolut Ltd") which would otherwise cause a false Revolut match.
+    // Detect by the statement header product name, which is unique to Barclays-issued PDFs.
+    if (/barclays\s+business\s+account/i.test(t))                    return 'barclays-business';
+    if (/\bbarclaycard\b/i.test(t))                                  return 'barclaycard';
+    if (/barclays\s+bank\s+account/i.test(t) || t.includes('barclays.co.uk') || t.includes('barclayscorporate.com')) return 'barclays';
     // Revolut before broad bank-name sweeps — Revolut Business PDFs can contain "nationwide"
     // or "starling" in transaction descriptions (e.g. "Nationwide ATM withdrawal"), which
     // would otherwise trigger a false match for those banks further down the list.
@@ -115,8 +121,6 @@ export function detectBankFromContent(text: string): BankType {
     if (/\bnationwide\b/.test(t))                                    return 'nationwide';
     // Nationwide without "nationwide" in text — detected by unique footer/summary phrase
     if (t.includes('balance carried forward to next statement'))     return 'nationwide';
-    if (/\bbarclaycard\b/i.test(t))                                  return 'barclaycard';
-    if (/barclays\s+business\s+account/i.test(t))                    return 'barclays-business';
     if (/\bbarclays\b/.test(t))                                      return 'barclays';
     if (/\btsb\b/.test(t) || /203\s*284\s*1576/.test(t))            return 'tsb';
     if (/\blloyds\b/.test(t))                                        return 'lloyds';
