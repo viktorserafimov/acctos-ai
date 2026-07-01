@@ -38,9 +38,10 @@ function getResend(): Resend | null {
 // ── Payload types ─────────────────────────────────────────────────────────────
 
 export interface ParserErrorAlert {
-    jobId:    string;
-    tenantId?: string;
-    label:    string;
+    jobId:         string;
+    tenantId?:     string;
+    emailSubject?: string;
+    label:         string;
     failedFiles: Array<{
         filename:     string;
         parsedIn:     number;
@@ -54,18 +55,20 @@ export interface ParserErrorAlert {
 }
 
 export interface JobFailedAlert {
-    jobId:    string;
-    tenantId?: string;
-    filename: string;
-    stage?:   string;
+    jobId:         string;
+    tenantId?:     string;
+    emailSubject?: string;
+    filename:      string;
+    stage?:        string;
     stageElapsedSec?: number;
-    error:    string;
-    errorType?: 'client' | 'system';
+    error:         string;
+    errorType?:    'client' | 'system';
 }
 
 export interface ChainGapAlert {
-    jobId:    string;
-    tenantId?: string;
+    jobId:         string;
+    tenantId?:     string;
+    emailSubject?: string;
     fileCount:           number;
     chainOpeningBalance: number;
     chainClosingBalance: number;
@@ -85,6 +88,7 @@ export interface InsufficientFilesAlert {
 // ── Team: parser verification failure ─────────────────────────────────────────
 
 export function notifyParserError(alert: ParserErrorAlert): void {
+    const clientName = alert.emailSubject ?? alert.label;
     const lines = alert.failedFiles.map(f => {
         const parts: string[] = [`• ${f.filename}`];
         if (f.inDiff  != null) parts.push(`In diff: ${f.inDiff  >= 0 ? '+' : ''}${f.inDiff.toFixed(2)}`);
@@ -93,8 +97,9 @@ export function notifyParserError(alert: ParserErrorAlert): void {
         return parts.join(' | ');
     });
 
-    const subject = `[Acctos] Parser verification failed — ${alert.label}`;
+    const subject = `[Acctos] Parser verification failed — ${clientName}`;
     const text = [
+        `Client: ${clientName}`,
         `Job: ${alert.jobId}`,
         `Tenant: ${alert.tenantId ?? 'unknown'}`,
         ``,
@@ -134,6 +139,7 @@ const SYSTEM_ERROR_ACTIONS: Record<string, string> = {
 
 export function notifyJobFailed(alert: JobFailedAlert): void {
     const isClientError = alert.errorType === 'client';
+    const clientName = alert.emailSubject ?? alert.filename;
     const stageLabel = STAGE_LABELS[alert.stage ?? ''] ?? alert.stage ?? 'unknown';
     const elapsed = alert.stageElapsedSec ? `${alert.stageElapsedSec}s` : 'unknown';
 
@@ -145,10 +151,11 @@ export function notifyJobFailed(alert: JobFailedAlert): void {
         : 'SYSTEM ERROR — our infrastructure or code failed';
 
     const subject = isClientError
-        ? `[Acctos] File could not be processed — ${alert.filename}`
-        : `[Acctos] SYSTEM ERROR — ${alert.filename}`;
+        ? `[Acctos] File could not be processed — ${clientName}`
+        : `[Acctos] SYSTEM ERROR — ${clientName}`;
 
     const text = [
+        `Client: ${clientName}`,
         `Type: ${errorTypeLabel}`,
         ``,
         `File: ${alert.filename}`,
@@ -173,13 +180,15 @@ export function notifyJobFailed(alert: JobFailedAlert): void {
 // ── Team + Client: missing documents in sequence ───────────────────────────────
 
 export function notifyChainGap(alert: ChainGapAlert): void {
-    const absDiff  = Math.abs(alert.diff).toFixed(2);
+    const absDiff   = Math.abs(alert.diff).toFixed(2);
     const direction = alert.diff < 0 ? 'shortfall' : 'surplus';
+    const clientName = alert.emailSubject ?? 'unknown client';
 
-    const teamSubject  = `[Acctos] Chain gap detected — £${absDiff} across ${alert.fileCount} files`;
-    const clientSubject = `Missing bank statement detected`;
+    const teamSubject   = `[Acctos] Chain gap detected — ${clientName} — £${absDiff} across ${alert.fileCount} files`;
+    const clientSubject = `Missing bank statement detected — ${clientName}`;
 
     const teamText = [
+        `Client: ${clientName}`,
         `Job: ${alert.jobId}`,
         `Tenant: ${alert.tenantId ?? 'unknown'}`,
         `Files in batch: ${alert.fileCount}`,
@@ -193,7 +202,7 @@ export function notifyChainGap(alert: ChainGapAlert): void {
     ].join('\n');
 
     const clientText = [
-        `We have detected a gap of £${absDiff} across the ${alert.fileCount} bank statement files you uploaded.`,
+        `We have detected a gap of £${absDiff} across the ${alert.fileCount} bank statement files received for ${clientName}.`,
         ``,
         `This typically means one or more monthly statements are missing from the sequence.`,
         `Please check that you have uploaded the complete set of statements and re-submit.`,

@@ -485,7 +485,8 @@ async function runBatchJob(jobId: string, files: FileInput[], tracking?: Trackin
         if (failedFiles.length > 0) {
             notifyParserError({
                 jobId,
-                tenantId: tracking?.tenantId,
+                tenantId:     tracking?.tenantId,
+                emailSubject: emailSubject,
                 label: `batch (${files.length} files)`,
                 failedFiles: failedFiles.map(f => ({
                     filename:    f.filename,
@@ -505,12 +506,13 @@ async function runBatchJob(jobId: string, files: FileInput[], tracking?: Trackin
             if (chain && !chain.ok) {
                 notifyChainGap({
                     jobId,
-                    tenantId:           tracking?.tenantId,
-                    fileCount:          files.length,
+                    tenantId:            tracking?.tenantId,
+                    emailSubject:        emailSubject,
+                    fileCount:           files.length,
                     chainOpeningBalance: chain.chainOpeningBalance,
                     chainClosingBalance: chain.chainClosingBalance,
-                    expectedClosing:    chain.expectedClosing,
-                    diff:               chain.diff,
+                    expectedClosing:     chain.expectedClosing,
+                    diff:                chain.diff,
                 });
             }
         }
@@ -576,11 +578,12 @@ async function runBatchJob(jobId: string, files: FileInput[], tracking?: Trackin
         }).catch(() => {});
         notifyJobFailed({
             jobId,
-            tenantId: tracking?.tenantId,
-            filename: `batch (${files.length} files)`,
+            tenantId:     tracking?.tenantId,
+            emailSubject: emailSubject,
+            filename:     `batch (${files.length} files)`,
             stage,
             stageElapsedSec: elapsed,
-            error: err.message || String(err),
+            error:    err.message || String(err),
             errorType,
         });
     }
