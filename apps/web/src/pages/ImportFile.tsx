@@ -337,8 +337,9 @@ export default function ImportFile() {
     const [previewFilename, setPreviewFilename] = useState('');
     const [processingMode, setProcessingMode] = useState<'bank_statement' | 'vat'>('bank_statement');
     const fileInputRef = useRef<HTMLInputElement>(null);
-    const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
-    const jobRef  = useRef<Job | null>(null);
+    const pollRef   = useRef<ReturnType<typeof setInterval> | null>(null);
+    const bgPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+    const jobRef    = useRef<Job | null>(null);
 
     // Load job history from Supabase on mount; also resume any in-progress job
     useEffect(() => {
@@ -403,7 +404,47 @@ export default function ImportFile() {
         return () => document.removeEventListener('visibilitychange', handleVisibility);
     }, []);
 
-    useEffect(() => () => { if (pollRef.current) clearInterval(pollRef.current); }, []);
+    useEffect(() => () => {
+        if (pollRef.current)   clearInterval(pollRef.current);
+        if (bgPollRef.current) clearInterval(bgPollRef.current);
+    }, []);
+
+    // Background poll every 10s — picks up Gmail-triggered jobs automatically
+    useEffect(() => {
+        bgPollRef.current = setInterval(async () => {
+            const currentJob = jobRef.current;
+            if (currentJob?.status === 'queued' || currentJob?.status === 'processing') return;
+            try {
+                const res = await axios.get('/v1/processing');
+                const jobs: Array<Record<string, any>> = res.data.jobs ?? [];
+                const inProgress = jobs.find((j: any) => j.status === 'queued' || j.status === 'processing');
+                if (inProgress) {
+                    const picked: Job = {
+                        id:               inProgress.id,
+                        filename:         inProgress.filename,
+                        status:           inProgress.status,
+                        currentStage:     inProgress.current_stage,
+                        bankType:         inProgress.bank_type,
+                        transactionCount: inProgress.transaction_count,
+                    };
+                    setJob(picked);
+                    startPolling(picked.id);
+                } else {
+                    setRecentJobs(
+                        jobs
+                            .filter((j: any) => j.status === 'completed' && j.output_path)
+                            .map((j: any) => ({
+                                id:               j.id,
+                                filename:         j.filename,
+                                completedAt:      j.completed_at ?? j.created_at,
+                                transactionCount: j.transaction_count,
+                            }))
+                    );
+                }
+            } catch { /* ignore */ }
+        }, 10000);
+        return () => { if (bgPollRef.current) clearInterval(bgPollRef.current); };
+    }, []);
 
     const addToRecent = useCallback((j: Job) => {
         setRecentJobs(prev => {
