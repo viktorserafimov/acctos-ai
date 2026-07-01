@@ -1,4 +1,3 @@
-import cron from 'node-cron';
 import { listUnreadMessages, getPdfAttachments, markAsRead } from '../services/google/GmailService.js';
 import { startBatchProcessingJob, extractClientName } from '../services/processing/ProcessingOrchestrator.js';
 import { uploadOriginalsToDrive } from '../services/google/GoogleService.js';
@@ -8,23 +7,34 @@ const LABEL_MAP = [
     { label: 'VAT AI',            processingMode: 'vat'            as const },
 ] as const;
 
+const POLL_INTERVAL_MS = 30_000; // 30 seconds
+
+// Prevent overlapping runs if a poll takes longer than the interval
+let polling = false;
+
 export function startGmailPollerCron(): void {
     if (!process.env.GOOGLE_CLIENT_ID || !process.env.GOOGLE_REFRESH_TOKEN) {
         console.log('[GmailPoller] Google credentials not configured — skipping');
         return;
     }
 
-    cron.schedule('*/5 * * * *', async () => {
-        for (const { label, processingMode } of LABEL_MAP) {
-            try {
-                await pollLabel(label, processingMode);
-            } catch (e: any) {
-                console.error(`[GmailPoller] Error polling label "${label}": ${e.message}`);
+    setInterval(async () => {
+        if (polling) return;
+        polling = true;
+        try {
+            for (const { label, processingMode } of LABEL_MAP) {
+                try {
+                    await pollLabel(label, processingMode);
+                } catch (e: any) {
+                    console.error(`[GmailPoller] Error polling label "${label}": ${e.message}`);
+                }
             }
+        } finally {
+            polling = false;
         }
-    });
+    }, POLL_INTERVAL_MS);
 
-    console.log('[GmailPoller] Gmail polling scheduled (every 5 minutes)');
+    console.log('[GmailPoller] Gmail polling scheduled (every 30 seconds)');
 }
 
 async function pollLabel(labelName: string, processingMode: 'bank_statement' | 'vat'): Promise<void> {

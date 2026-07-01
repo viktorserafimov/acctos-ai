@@ -30,14 +30,22 @@ export default function Layout({ children }: LayoutProps) {
 
     useEffect(() => {
         let cancelled = false;
+        let interval: ReturnType<typeof setInterval>;
+
         const fetchPauseStatus = async () => {
             try {
                 const res = await axios.get('/v1/billing/usage-status');
                 if (!cancelled) setScenariosPaused(res.data.scenariosPaused ?? false);
-            } catch { /* ignore auth/network errors */ }
+            } catch (err: any) {
+                // Token expired or invalid — stop polling to avoid log spam
+                if (err?.response?.status === 401 || err?.response?.status === 403) {
+                    clearInterval(interval);
+                }
+            }
         };
+
         fetchPauseStatus();
-        const interval = setInterval(fetchPauseStatus, 60_000);
+        interval = setInterval(fetchPauseStatus, 60_000);
         return () => { cancelled = true; clearInterval(interval); };
     }, []);
 
