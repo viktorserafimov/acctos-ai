@@ -627,7 +627,8 @@ function extractBarclaysStatementTotals(cells: Cell[]): ParseResult['statementTo
         if (c0 === 'start balance' || c0 === 'opening balance') {
             const v = parseMoney(c1); if (v !== null) openingBalance = Math.abs(v);
         } else if (c0 === 'end balance' || c0 === 'closing balance') {
-            const v = parseMoney(c1); if (v !== null) closingBalance = v;
+            const v = parseMoney(c1);
+            if (v !== null) closingBalance = /\bOD\b/i.test(c1) ? -Math.abs(v) : v;
         } else if (c0 === 'money out') {
             const v = parseMoney(c1); if (v !== null) moneyOut = Math.abs(v);
         } else if (c0 === 'money in') {
@@ -649,7 +650,14 @@ function extractBarclaysStatementTotals(cells: Cell[]): ParseResult['statementTo
         if (moneyOut === undefined)      moneyOut      = pick(/\bMoney out\n[£€]?([\d,]+\.?\d*)/i);
         if (moneyIn === undefined)       moneyIn       = pick(/\bMoney in\n[£€]?([\d,]+\.?\d*)/i);
         if (openingBalance === undefined) openingBalance = pick(/\bStart balance\n[£€]?([\d,]+\.?\d*)/i);
-        if (closingBalance === undefined) closingBalance = pick(/\bEnd balance\n[£€]?([\d,]+\.?\d*)/i);
+        if (closingBalance === undefined) {
+            // Use OD-aware extraction: preserve negative sign for overdraft closing balance
+            const ecm = /\bEnd balance\n[£€]?([\d,]+\.?\d*)(\s*OD)?/i.exec(raw);
+            if (ecm) {
+                const v = parseMoney(ecm[1]);
+                if (v !== null) closingBalance = ecm[2]?.trim() ? -Math.abs(v) : v;
+            }
+        }
     }
 
     if (moneyIn === undefined || moneyOut === undefined) return undefined;

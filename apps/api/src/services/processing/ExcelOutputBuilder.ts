@@ -93,6 +93,7 @@ function addVerificationSide(ws: ExcelJS.Worksheet, v: VerificationSummary, file
                 write('Closing (last file)',  chain.chainClosingBalance);
                 write('');
                 // Per-period gap checks (file N closing vs file N+1 opening)
+                const pairCount = fileSummaries!.length - 1;
                 if (chain.gaps.length > 0) {
                     write('Per-period checks:', null, true);
                     for (const g of chain.gaps) {
@@ -102,13 +103,17 @@ function addVerificationSide(ws: ExcelJS.Worksheet, v: VerificationSummary, file
                         write(`⚠ After ${label}: close=${g.expectedOpen.toFixed(2)}, next open=${g.actualOpen.toFixed(2)} (${sign}${g.diff.toFixed(2)})`, null, true);
                     }
                     write('');
+                } else if (pairCount > 0) {
+                    // All consecutive pairs link correctly — always show confirmation
+                    write(`✓ All ${pairCount} consecutive period${pairCount === 1 ? '' : 's'} balance correctly`, null, true);
+                    write('');
                 }
                 // Overall net check
                 if (chain.ok) {
                     write('✓ No gaps detected', null, true);
                 } else if (chain.gaps.length === 0) {
-                    // Only overall diff — no per-period mismatch
-                    write(`⚠ Net gap: ${chain.diff > 0 ? '+' : ''}${chain.diff.toFixed(2)} — possible missing file`, null, true);
+                    // Per-period all OK but overall diff — likely OD balance sign or missing file
+                    write(`⚠ Net gap: ${chain.diff > 0 ? '+' : ''}${chain.diff.toFixed(2)} — verify OD balance signs or missing file`, null, true);
                 } else {
                     write(`⚠ ${chain.gaps.length} gap${chain.gaps.length > 1 ? 's' : ''} detected — likely missing statement${chain.gaps.length > 1 ? 's' : ''}`, null, true);
                 }
