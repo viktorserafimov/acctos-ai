@@ -73,6 +73,15 @@ export interface ChainGapAlert {
     diff:                number;
 }
 
+export interface InsufficientFilesAlert {
+    jobId:           string;
+    tenantId?:       string;
+    emailSubject?:   string;
+    fileCount:       number;
+    minimumRequired: number;
+    processingMode:  'bank_statement' | 'vat';
+}
+
 // ── Team: parser verification failure ─────────────────────────────────────────
 
 export function notifyParserError(alert: ParserErrorAlert): void {
@@ -193,6 +202,48 @@ export function notifyChainGap(alert: ChainGapAlert): void {
     ].join('\n');
 
     console.warn(`[ALERT:chain_gap] ${teamSubject}\n${teamText}`);
+    sendEmail(TEAM_EMAIL, teamSubject, teamText);
+    sendEmail(CLIENT_EMAIL, clientSubject, clientText);
+}
+
+// ── Team + Client: not enough files for a complete period ─────────────────────
+
+export function notifyInsufficientFiles(alert: InsufficientFilesAlert): void {
+    const modeLabel  = alert.processingMode === 'vat' ? 'VAT' : 'Bank Statement';
+    const periodDesc = alert.processingMode === 'vat'
+        ? 'quarterly report (minimum 3 files — one per quarter)'
+        : 'annual report (minimum 12 files — one per month)';
+    const missing    = alert.minimumRequired - alert.fileCount;
+    const label      = alert.emailSubject ?? `Job ${alert.jobId}`;
+
+    const teamSubject   = `[Acctos] Insufficient files — ${label} (${alert.fileCount}/${alert.minimumRequired} ${modeLabel})`;
+    const clientSubject = `Action required — missing files for ${modeLabel} report`;
+
+    const teamText = [
+        `Job: ${alert.jobId}`,
+        `Tenant: ${alert.tenantId ?? 'unknown'}`,
+        `Email subject: ${alert.emailSubject ?? 'n/a'}`,
+        ``,
+        `Files received: ${alert.fileCount}`,
+        `Minimum required: ${alert.minimumRequired}`,
+        `Missing: ${missing}`,
+        ``,
+        `Processing has started with the files received. The report may be incomplete.`,
+    ].join('\n');
+
+    const clientText = [
+        `We received ${alert.fileCount} file${alert.fileCount !== 1 ? 's' : ''} for your ${modeLabel} ${periodDesc}.`,
+        ``,
+        `To produce a complete report we need at least ${alert.minimumRequired} files, ` +
+        `so ${missing} file${missing !== 1 ? 's are' : ' is'} missing.`,
+        ``,
+        `We have started processing the files already received — you will get the results shortly.`,
+        `Please send the missing files in a follow-up email so we can complete the report.`,
+        ``,
+        `If you believe you have sent all the files, please reply to this email and we will investigate.`,
+    ].join('\n');
+
+    console.warn(`[ALERT:insufficient_files] ${teamSubject}`);
     sendEmail(TEAM_EMAIL, teamSubject, teamText);
     sendEmail(CLIENT_EMAIL, clientSubject, clientText);
 }

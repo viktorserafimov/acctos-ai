@@ -10,7 +10,7 @@ import { parseExcel } from './ExcelParser.js';
 import { buildPdfOutputExcel, buildExcelOutputExcel, buildVatOutputExcel } from './ExcelOutputBuilder.js';
 import { Cell, ParsedTransaction, ParseResult } from './parsers/shared.js';
 import { computeVerification, applyCatVerification, logVerificationSummary, computeChainVerification } from './Verification.js';
-import { notifyParserError, notifyChainGap, notifyJobFailed } from './NotificationService.js';
+import { notifyParserError, notifyChainGap, notifyJobFailed, notifyInsufficientFiles } from './NotificationService.js';
 import {
     getAzureCache, saveAzureCache,
     createJobRecord, updateJobRecord, saveOutputFile,
@@ -297,6 +297,19 @@ async function runBatchJob(jobId: string, files: FileInput[], tracking?: Trackin
     const timer = makeStageTimer();
     try {
         jobStore.update(jobId, { status: 'processing', totalFiles: files.length });
+
+        // Warn when the client hasn't sent enough files for a complete period
+        const minFiles = processingMode === 'vat' ? 3 : 12;
+        if (files.length < minFiles) {
+            notifyInsufficientFiles({
+                jobId,
+                tenantId:        tracking?.tenantId,
+                emailSubject,
+                fileCount:       files.length,
+                minimumRequired: minFiles,
+                processingMode:  processingMode ?? 'bank_statement',
+            });
+        }
 
         const allTransactions: ParsedTransaction[] = [];
         let confirmedBankType: BankType | null = bankHint ?? null;
