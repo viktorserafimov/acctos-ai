@@ -1,6 +1,6 @@
 import cron from 'node-cron';
 import { listUnreadMessages, getPdfAttachments, markAsRead } from '../services/google/GmailService.js';
-import { startBatchProcessingJob } from '../services/processing/ProcessingOrchestrator.js';
+import { startBatchProcessingJob, extractClientName } from '../services/processing/ProcessingOrchestrator.js';
 import { uploadOriginalsToDrive } from '../services/google/GoogleService.js';
 
 const LABEL_MAP = [
@@ -50,10 +50,11 @@ async function pollLabel(labelName: string, processingMode: 'bank_statement' | '
                 ? process.env.DRIVE_VAT_ORIGINALS_FOLDER_ID
                 : process.env.DRIVE_BANK_STATEMENT_ORIGINALS_FOLDER_ID;
             if (originalsId && message.subject) {
+                const clientFolder = extractClientName(message.subject);
                 uploadOriginalsToDrive(
                     pdfs.map(p => ({ buffer: p.buffer, filename: p.filename })),
                     originalsId,
-                    message.subject,
+                    clientFolder,
                 ).catch(e => console.warn('[GmailPoller] Originals Drive upload failed:', e?.message));
             }
 

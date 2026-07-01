@@ -27,6 +27,21 @@ function driveFilename(name: string): string {
     return name.replace(/\.(pdf|xlsx?|csv)$/i, '') + '_processed.xlsx';
 }
 
+/**
+ * Extract the client name from an email subject that follows the convention
+ * "Client Name - Period" (e.g. "Universal Trade BG - Oct 2024").
+ * If no " - " separator is found the whole subject is used as-is.
+ */
+export function extractClientName(subject: string): string {
+    const idx = subject.indexOf(' - ');
+    return (idx > 0 ? subject.slice(0, idx) : subject).trim();
+}
+
+/** Sanitise a string so it's safe to use as a Drive filename. */
+function safeDriveFilename(subject: string): string {
+    return subject.replace(/[\\/:*?"<>|]/g, '_').trim() + '_processed.xlsx';
+}
+
 interface TrackingContext {
     prisma: PrismaClient;
     tenantId: string;
@@ -514,12 +529,13 @@ async function runBatchJob(jobId: string, files: FileInput[], tracking?: Trackin
             });
             const folderId = getDriveFolderId(processingMode);
             if (folderId) {
-                const fn = driveFilename(_batchName);
                 if (emailSubject) {
-                    await uploadToDriveSubfolder(outputBuffer, fn, folderId, emailSubject)
+                    const clientFolder = extractClientName(emailSubject);
+                    const fn = safeDriveFilename(emailSubject);
+                    await uploadToDriveSubfolder(outputBuffer, fn, folderId, clientFolder)
                         .catch(e => console.warn('[Orchestrator] Drive upload (batch) failed:', e?.message));
                 } else {
-                    await uploadToDriveFolder(outputBuffer, fn, folderId)
+                    await uploadToDriveFolder(outputBuffer, driveFilename(_batchName), folderId)
                         .catch(e => console.warn('[Orchestrator] Drive upload (batch) failed:', e?.message));
                 }
             }
