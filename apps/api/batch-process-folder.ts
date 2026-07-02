@@ -1,6 +1,6 @@
 /**
  * Batch process all PDFs in a folder → one combined Excel, sorted by date.
- * Run with: npx tsx batch-process-folder.ts "<folder path>"
+ * Run with: npx tsx batch-process-folder.ts "<folder path>" [vat]
  */
 import { readFileSync, writeFileSync, readdirSync, existsSync } from 'fs';
 import { join, basename } from 'path';
@@ -14,7 +14,7 @@ for (const line of envLines) {
 
 import { detectBankFromContent } from './src/services/processing/DocumentClassifier.js';
 import { categorize } from './src/services/processing/AssistantCategorizer.js';
-import { buildPdfOutputExcel } from './src/services/processing/ExcelOutputBuilder.js';
+import { buildPdfOutputExcel, buildVatOutputExcel } from './src/services/processing/ExcelOutputBuilder.js';
 import { computeVerification, applyCatVerification, computeChainVerification } from './src/services/processing/Verification.js';
 import { Cell, ParseResult, ParsedTransaction, parseMoney } from './src/services/processing/parsers/shared.js';
 import { FileSummary } from './src/services/processing/JobStore.js';
@@ -25,9 +25,11 @@ import { parse as parseBarclaysBusiness } from './src/services/processing/parser
 import { parse as parseHsbc } from './src/services/processing/parsers/hsbc.js';
 import { parse as parseMonese } from './src/services/processing/parsers/monese.js';
 import { parse as parseNatwest } from './src/services/processing/parsers/natwest.js';
+import { parse as parseRevolut } from './src/services/processing/parsers/revolut.js';
 
 const FOLDER = process.argv[2];
-if (!FOLDER) { console.error('Usage: npx tsx batch-process-folder.ts "<folder>"\n'); process.exit(1); }
+const MODE   = process.argv[3] === 'vat' ? 'vat' : 'bank_statement';
+if (!FOLDER) { console.error('Usage: npx tsx batch-process-folder.ts "<folder>" [vat]\n'); process.exit(1); }
 
 function getParser(bank: string): ((cells: Cell[]) => ParseResult) | null {
     switch (bank) {
@@ -38,6 +40,7 @@ function getParser(bank: string): ((cells: Cell[]) => ParseResult) | null {
         case 'hsbc':              return parseHsbc;
         case 'monese':            return parseMonese;
         case 'natwest':           return parseNatwest;
+        case 'revolut':           return parseRevolut;
         default:           return null;
     }
 }
@@ -248,9 +251,11 @@ if (verification) applyCatVerification(verification, categorized);
 
 // Step 6: Build one Excel file
 console.log('\nBuilding Excel...');
-const buffer = await buildPdfOutputExcel(categorized, verification, fileSummaries);
+const buffer = MODE === 'vat'
+    ? await buildVatOutputExcel(categorized)
+    : await buildPdfOutputExcel(categorized, verification, fileSummaries);
 
-const outName = `${fileResults.length}_files_processed.xlsx`;
+const outName = `${fileResults.length}_files_processed_${MODE}.xlsx`;
 const outPath = join(FOLDER, outName);
 writeFileSync(outPath, buffer);
 console.log(`\n✓ Saved: ${outPath}`);
